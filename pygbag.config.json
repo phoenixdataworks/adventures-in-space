@@ -1,0 +1,29 @@
+{
+    "app_name": "Adventures in Space",
+    "app_version": "1.0",
+    "archive": [
+        "main.py",
+        "index.html"
+    ],
+    "requirements": [
+        "pygame>=2.5.0",
+        "asyncio>=3.4.3"
+    ],
+    "main_script": "main.py",
+    "serve": {
+        "app_path": ".",
+        "host": "localhost",
+        "port": 8000
+    },
+    "build": {
+        "target": "web",
+        "flags": [
+            "--preload-file",
+            "assets"
+        ]
+    },
+    "web": {
+        "canvas_resize_policy": "scale_inner",
+        "focus_leave_policy": "pause"
+    }
+}

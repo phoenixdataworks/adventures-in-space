@@ -1,0 +1,7 @@
+{
+    "app_name": "Adventures in Space",
+    "main_script": "main.py",
+    "requirements": [
+        "pygame>=2.5.0"
+    ]
+}

@@ -1,0 +1,17 @@
+{
+    "app_name": "Adventures in Space",
+    "app_version": "1.0",
+    "archive": [
+        "main.py"
+    ],
+    "requirements": [
+        "pygame>=2.5.0",
+        "asyncio>=3.4.3"
+    ],
+    "main_script": "main.py",
+    "serve": {
+        "app_path": ".",
+        "host": "localhost",
+        "port": 8000
+    }
+}
