@@ -36,7 +36,7 @@ jobs:
       
       - name: Build with Pygbag
         run: |
-          python -m pygbag --build --app-name "Adventures in Space" --destination build/web .
+          python -m pygbag --build .
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
