@@ -32,11 +32,12 @@ player_x = WIDTH // 2 - player_width // 2
 player_y = HEIGHT - player_height - 10
 player_velocity = 0
 player_acceleration = 0.5
-player_max_speed = 8
-base_friction = 0.98  # Renamed from player_friction
-player_friction = base_friction  # Current friction that will change with level
-friction_decrease = 0.02  # How much friction decreases per level
-min_friction = 0.8  # Minimum friction value to prevent uncontrollable sliding
+player_base_max_speed = 8
+player_max_speed = player_base_max_speed
+base_friction = 0.98
+player_friction = base_friction
+friction_decrease = 0.03
+min_friction = 0.8
 player_health = 100
 ammo = 15
 
@@ -76,16 +77,68 @@ TARGET_RADIUS = 20
 CARE_PACKAGE_SIZE = 30
 HEALTH_PACK_SIZE = 5
 
+# Star settings
+STAR_LAYERS = [
+    {"count": 300, "size": 1},  # Tiny stars
+    {"count": 150, "size": 2},  # Medium stars
+    {"count": 75, "size": 3},  # Large stars
+    {"count": 25, "size": 4},  # Extra bright stars
+]
+
+
+class Star:
+    def __init__(self, size):
+        self.x = random.randint(0, WIDTH)
+        self.y = random.randint(0, HEIGHT)
+        self.size = size
+        # Make all stars very bright
+        self.color = (255, 255, 255)  # Pure white
+
+    def draw(self, screen):
+        # Draw a filled circle for better visibility
+        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.size, 0)
+
+
+# Initialize star layers
+star_field = []
+for layer in STAR_LAYERS:
+    stars = [Star(layer["size"]) for _ in range(layer["count"])]
+    star_field.append(stars)
+
+
+def draw_stars():
+    # Draw each star as a small filled circle
+    for layer in star_field:
+        for star in layer:
+            star.draw(screen)
+
+
 # Game state variables
 player_name = ""
 entering_name = False
 name_submitted = False
+game_started = False  # New variable to track if game has started
 
 # Add button constants
 BUTTON_WIDTH = 200
 BUTTON_HEIGHT = 50
 BUTTON_COLOR = BLUE
 BUTTON_HOVER_COLOR = (0, 150, 255)  # Lighter blue for hover
+
+# Story and instructions
+STORY_TEXT = """In the year 2157, humanity's insatiable curiosity led you to the far reaches of space. As an elite Space Defense pilot, you patrol the dangerous Asteroid Belt between Mars and Jupiter. But something's wrong - these aren't normal asteroids. They're moving with purpose, threatening Earth's outposts.
+
+Your mission: Defend our space territory using your advanced Nerf-based weapon system. The deeper you venture into space, the faster and more unpredictable the threats become."""
+
+INSTRUCTIONS_TEXT = """CONTROLS:
+← → Arrow Keys to move
+SPACE to shoot
+
+TIPS:
+- Green boxes give ammo (+5)
+- Blue boxes restore health (+10)
+- Watch out for red asteroids!
+- Movement becomes faster and more slippery in higher levels"""
 
 
 def spawn_target():
@@ -129,15 +182,8 @@ def is_web():
 
 def load_leaderboard():
     if is_web():
-        try:
-            from javascript import localStorage
-
-            stored_data = localStorage.getItem("space_nerf_leaderboard")
-            if stored_data:
-                return json.loads(stored_data)
-            return []
-        except ImportError:
-            return []
+        # Web storage is only used when running in browser via Pygbag
+        return []
     else:
         try:
             with open(LEADERBOARD_FILE, "r") as f:
@@ -148,12 +194,8 @@ def load_leaderboard():
 
 def save_leaderboard(leaderboard):
     if is_web():
-        try:
-            from javascript import localStorage
-
-            localStorage.setItem("space_nerf_leaderboard", json.dumps(leaderboard))
-        except ImportError:
-            pass
+        # Web storage is only used when running in browser via Pygbag
+        pass
     else:
         with open(LEADERBOARD_FILE, "w") as f:
             json.dump(leaderboard, f)
@@ -206,13 +248,14 @@ def reset_game():
     global player_health, player_velocity, player_x, ammo, score, level, level_timer
     global entering_name, name_submitted, player_name, knockback_timer, player_friction
     global bullets, targets, care_packages, health_packs, explosions, target_speed, target_spawn_rate
-    global floating_texts
+    global floating_texts, player_max_speed
 
     # Reset player
     player_health = 100
     player_velocity = 0
     player_x = WIDTH // 2 - player_width // 2
     ammo = 15
+    player_max_speed = player_base_max_speed  # Reset max speed to base value
 
     # Reset game state
     score = 0
@@ -241,15 +284,81 @@ def create_floating_text(text, x, y, color=WHITE):
     floating_texts.append({"text": text, "x": x, "y": y, "color": color, "frame": 0})
 
 
+def draw_start_screen():
+    screen.fill(BLACK)
+    draw_stars()  # Draw stars before anything else
+
+    # Draw title
+    title_font = pygame.font.Font(None, 64)
+    title_text = title_font.render("Adventures in Space", True, YELLOW)
+    screen.blit(title_text, (WIDTH // 2 - title_text.get_rect().width // 2, 50))
+
+    # Draw story
+    y_pos = 150
+    wrapped_story = wrap_text(STORY_TEXT, font, WIDTH - 100)
+    for line in wrapped_story:
+        text_surface = font.render(line, True, WHITE)
+        screen.blit(text_surface, (50, y_pos))
+        y_pos += 30
+
+    # Draw instructions
+    y_pos += 30
+    wrapped_instructions = wrap_text(INSTRUCTIONS_TEXT, font, WIDTH - 100)
+    for line in wrapped_instructions:
+        text_surface = font.render(line, True, BLUE)
+        screen.blit(text_surface, (50, y_pos))
+        y_pos += 30
+
+    # Draw start button with mouse hover detection
+    mouse_pos = pygame.mouse.get_pos()
+    button_rect = pygame.Rect(
+        WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT - 100, BUTTON_WIDTH, BUTTON_HEIGHT
+    )
+    hover = button_rect.collidepoint(mouse_pos)
+
+    return draw_button(
+        "START MISSION", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT - 100, hover
+    )
+
+
+def wrap_text(text, font, max_width):
+    words = text.split()
+    lines = []
+    current_line = []
+
+    for word in words:
+        # Add word to test line
+        test_line = current_line + [word]
+        test_surface = font.render(" ".join(test_line), True, WHITE)
+
+        # If test line is too wide, save current line and start new one
+        if test_surface.get_rect().width > max_width:
+            if current_line:  # Only save if there are words in current line
+                lines.append(" ".join(current_line))
+                current_line = [word]
+            else:  # If single word is too long, force it on its own line
+                lines.append(word)
+                current_line = []
+        else:
+            current_line = test_line
+
+    # Add the last line if there are remaining words
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    return lines
+
+
 async def game_loop():
     global player_health, player_velocity, player_x, ammo, score, level, level_timer
     global entering_name, name_submitted, player_name, knockback_timer, player_friction
-    global target_speed, target_spawn_rate
+    global target_speed, target_spawn_rate, game_started, player_max_speed
 
     running = True
     frames = 0
     game_over = False
     last_time = time.time()
+    player_max_speed = player_base_max_speed  # Initialize at start
 
     while running:
         if is_web():
@@ -263,6 +372,21 @@ async def game_loop():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif (
+                event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+            ):  # Left click
+                mouse_pos = pygame.mouse.get_pos()
+                if not game_started:
+                    start_button = draw_start_screen()
+                    if start_button.collidepoint(mouse_pos):
+                        game_started = True
+                elif game_over and name_submitted:
+                    if replay_rect.collidepoint(event.pos):
+                        reset_game()
+                        game_started = False
+                        game_over = False
+                    elif quit_rect.collidepoint(event.pos):
+                        running = False
             elif event.type == pygame.KEYDOWN:
                 if game_over and entering_name:
                     if event.key == pygame.K_RETURN and player_name:
@@ -273,23 +397,132 @@ async def game_loop():
                         player_name = player_name[:-1]
                     elif len(player_name) < MAX_NAME_LENGTH and event.unicode.isalnum():
                         player_name += event.unicode.upper()
-                elif event.key == pygame.K_SPACE and not game_over:
+                elif event.key == pygame.K_SPACE and game_started and not game_over:
                     shoot(player_x, player_y)
 
-        if not game_over:
-            # Level progression
-            current_time = time.time()
+        # Clear screen and draw stars
+        screen.fill(BLACK)
+        draw_stars()
+
+        # Handle game states
+        if not game_started:
+            start_button = draw_start_screen()
+            pygame.display.flip()
+            clock.tick(60)
+            continue
+        elif game_over:
+            if not entering_name and not name_submitted:
+                entering_name = True
+                player_name = ""
+
+            game_over_text = font.render("GAME OVER!", True, RED)
+            final_score_text = font.render(f"Final Score: {score}", True, WHITE)
+            level_reached_text = font.render(f"Level Reached: {level}", True, WHITE)
+
+            screen.blit(game_over_text, (WIDTH // 2 - 100, HEIGHT // 3 - 50))
+            screen.blit(final_score_text, (WIDTH // 2 - 100, HEIGHT // 3))
+            screen.blit(level_reached_text, (WIDTH // 2 - 100, HEIGHT // 3 + 50))
+
+            if entering_name:
+                draw_name_input(screen, player_name)
+            elif name_submitted:
+                leaderboard_title = font.render("HIGH SCORES", True, YELLOW)
+                screen.blit(leaderboard_title, (WIDTH // 2 - 100, HEIGHT // 2 - 40))
+
+                leaderboard = load_leaderboard()
+                for i, entry in enumerate(leaderboard):
+                    # Format timestamp if it exists
+                    time_str = ""
+                    if "timestamp" in entry:
+                        time_struct = time.localtime(entry["timestamp"])
+                        time_str = time.strftime(" (%Y-%m-%d)", time_struct)
+
+                    score_text = font.render(
+                        f"{i+1}. {entry['name']}: {entry['score']} (Level {entry['level']}){time_str}",
+                        True,
+                        WHITE,
+                    )
+                    screen.blit(score_text, (WIDTH // 2 - 150, HEIGHT // 2 + i * 30))
+
+                # Draw buttons
+                mouse_pos = pygame.mouse.get_pos()
+
+                # Replay button
+                replay_rect = draw_button(
+                    "PLAY AGAIN",
+                    WIDTH // 2 - BUTTON_WIDTH - 20,
+                    HEIGHT - 100,
+                    (
+                        replay_rect.collidepoint(mouse_pos)
+                        if "replay_rect" in locals()
+                        else False
+                    ),
+                )
+
+                # Quit button
+                quit_rect = draw_button(
+                    "QUIT",
+                    WIDTH // 2 + 20,
+                    HEIGHT - 100,
+                    (
+                        quit_rect.collidepoint(mouse_pos)
+                        if "quit_rect" in locals()
+                        else False
+                    ),
+                )
+
+        else:
+            # Game state drawing and logic
+            draw_player(player_x, player_y)
+
+            # Game logic
             if current_time - level_timer >= level_duration:
                 level += 1
                 level_timer = current_time
                 target_speed = 3 * (speed_increase ** (level - 1))
                 target_spawn_rate = max(10, 60 - (level * 5))
-                # Update friction based on level
+                # Update friction and max speed based on level
                 player_friction = max(
                     base_friction - (friction_decrease * (level - 1)), min_friction
                 )
+                player_max_speed = player_base_max_speed * (1 + (level - 1) * 0.2)
 
-            # Player movement with knockback
+            # Draw game objects
+            for bullet in bullets:
+                pygame.draw.circle(
+                    screen, WHITE, (int(bullet["x"]), int(bullet["y"])), BULLET_RADIUS
+                )
+
+            for target in targets:
+                pygame.draw.circle(
+                    screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
+                )
+
+            for package in care_packages:
+                pygame.draw.rect(
+                    screen,
+                    GREEN,
+                    (
+                        package["x"] - CARE_PACKAGE_SIZE // 2,
+                        package["y"] - CARE_PACKAGE_SIZE // 2,
+                        CARE_PACKAGE_SIZE,
+                        CARE_PACKAGE_SIZE,
+                    ),
+                )
+
+            for pack in health_packs:
+                pygame.draw.rect(
+                    screen,
+                    BLUE,
+                    (
+                        pack["x"] - HEALTH_PACK_SIZE // 2,
+                        pack["y"] - HEALTH_PACK_SIZE // 2,
+                        HEALTH_PACK_SIZE,
+                        HEALTH_PACK_SIZE,
+                    ),
+                )
+
+            # Game logic
             if knockback_timer > 0:
                 knockback_timer -= 1
             else:
@@ -428,160 +661,95 @@ async def game_loop():
                     create_floating_text("+10", pack["x"], pack["y"], BLUE)
                     health_packs.remove(pack)
 
-        # Drawing
-        screen.fill(BLACK)
+            # Drawing
+            if not game_over:
+                draw_player(player_x, player_y)
 
-        if not game_over:
-            draw_player(player_x, player_y)
-
-            # Draw game objects
-            for bullet in bullets:
-                pygame.draw.circle(
-                    screen, WHITE, (int(bullet["x"]), int(bullet["y"])), BULLET_RADIUS
-                )
-
-            for target in targets:
-                pygame.draw.circle(
-                    screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
-                )
-
-            for package in care_packages:
-                pygame.draw.rect(
-                    screen,
-                    GREEN,
-                    (
-                        package["x"] - CARE_PACKAGE_SIZE // 2,
-                        package["y"] - CARE_PACKAGE_SIZE // 2,
-                        CARE_PACKAGE_SIZE,
-                        CARE_PACKAGE_SIZE,
-                    ),
-                )
-
-            for pack in health_packs:
-                pygame.draw.rect(
-                    screen,
-                    BLUE,
-                    (
-                        pack["x"] - HEALTH_PACK_SIZE // 2,
-                        pack["y"] - HEALTH_PACK_SIZE // 2,
-                        HEALTH_PACK_SIZE,
-                        HEALTH_PACK_SIZE,
-                    ),
-                )
-
-            # Draw explosions
-            for explosion in explosions[:]:
-                radius = (explosion["size"] * explosion["frame"]) // 20
-                alpha = 255 * (1 - explosion["frame"] / 20)
-                explosion_surface = pygame.Surface(
-                    (radius * 2, radius * 2), pygame.SRCALPHA
-                )
-                pygame.draw.circle(
-                    explosion_surface, (*YELLOW, alpha), (radius, radius), radius
-                )
-                screen.blit(
-                    explosion_surface,
-                    (explosion["x"] - radius, explosion["y"] - radius),
-                )
-                explosion["frame"] += 1
-                if explosion["frame"] >= 20:
-                    explosions.remove(explosion)
-
-            # Draw floating texts
-            for text in floating_texts[:]:
-                text_surface = font.render(text["text"], True, text["color"])
-                text_rect = text_surface.get_rect(
-                    center=(text["x"], text["y"] - text["frame"] * FLOAT_SPEED)
-                )
-                screen.blit(text_surface, text_rect)
-                text["frame"] += 1
-                if text["frame"] >= FLOAT_DURATION:
-                    floating_texts.remove(text)
-
-            # Draw HUD
-            score_text = font.render(f"Score: {score}", True, WHITE)
-            health_text = font.render(f"Health: {player_health}", True, WHITE)
-            ammo_text = font.render(f"Ammo: {ammo}", True, WHITE)
-            level_text = font.render(f"Level: {level}", True, WHITE)
-            time_left = level_duration - (current_time - level_timer)
-            timer_text = font.render(f"Next Level: {int(time_left)}s", True, WHITE)
-
-            screen.blit(score_text, (10, 10))
-            screen.blit(health_text, (10, 50))
-            screen.blit(ammo_text, (10, 90))
-            screen.blit(level_text, (WIDTH - 150, 10))
-            screen.blit(timer_text, (WIDTH - 150, 50))
-
-        else:
-            if not entering_name and not name_submitted:
-                entering_name = True
-                player_name = ""
-
-            game_over_text = font.render("GAME OVER!", True, RED)
-            final_score_text = font.render(f"Final Score: {score}", True, WHITE)
-            level_reached_text = font.render(f"Level Reached: {level}", True, WHITE)
-
-            screen.blit(game_over_text, (WIDTH // 2 - 100, HEIGHT // 3 - 50))
-            screen.blit(final_score_text, (WIDTH // 2 - 100, HEIGHT // 3))
-            screen.blit(level_reached_text, (WIDTH // 2 - 100, HEIGHT // 3 + 50))
-
-            if entering_name:
-                draw_name_input(screen, player_name)
-            elif name_submitted:
-                leaderboard_title = font.render("HIGH SCORES", True, YELLOW)
-                screen.blit(leaderboard_title, (WIDTH // 2 - 100, HEIGHT // 2 - 40))
-
-                leaderboard = load_leaderboard()
-                for i, entry in enumerate(leaderboard):
-                    # Format timestamp if it exists
-                    time_str = ""
-                    if "timestamp" in entry:
-                        time_struct = time.localtime(entry["timestamp"])
-                        time_str = time.strftime(" (%Y-%m-%d)", time_struct)
-
-                    score_text = font.render(
-                        f"{i+1}. {entry['name']}: {entry['score']} (Level {entry['level']}){time_str}",
-                        True,
+                # Draw game objects
+                for bullet in bullets:
+                    pygame.draw.circle(
+                        screen,
                         WHITE,
+                        (int(bullet["x"]), int(bullet["y"])),
+                        BULLET_RADIUS,
                     )
-                    screen.blit(score_text, (WIDTH // 2 - 150, HEIGHT // 2 + i * 30))
 
-                # Draw buttons
-                mouse_pos = pygame.mouse.get_pos()
+                for target in targets:
+                    pygame.draw.circle(
+                        screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
+                    )
 
-                # Replay button
-                replay_rect = draw_button(
-                    "PLAY AGAIN",
-                    WIDTH // 2 - BUTTON_WIDTH - 20,
-                    HEIGHT - 100,
-                    (
-                        replay_rect.collidepoint(mouse_pos)
-                        if "replay_rect" in locals()
-                        else False
-                    ),
-                )
+                for package in care_packages:
+                    pygame.draw.rect(
+                        screen,
+                        GREEN,
+                        (
+                            package["x"] - CARE_PACKAGE_SIZE // 2,
+                            package["y"] - CARE_PACKAGE_SIZE // 2,
+                            CARE_PACKAGE_SIZE,
+                            CARE_PACKAGE_SIZE,
+                        ),
+                    )
 
-                # Quit button
-                quit_rect = draw_button(
-                    "QUIT",
-                    WIDTH // 2 + 20,
-                    HEIGHT - 100,
-                    (
-                        quit_rect.collidepoint(mouse_pos)
-                        if "quit_rect" in locals()
-                        else False
-                    ),
-                )
+                for pack in health_packs:
+                    pygame.draw.rect(
+                        screen,
+                        BLUE,
+                        (
+                            pack["x"] - HEALTH_PACK_SIZE // 2,
+                            pack["y"] - HEALTH_PACK_SIZE // 2,
+                            HEALTH_PACK_SIZE,
+                            HEALTH_PACK_SIZE,
+                        ),
+                    )
 
-                # Handle button clicks
-                if (
-                    event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-                ):  # Left click
-                    if replay_rect.collidepoint(event.pos):
-                        reset_game()
-                        game_over = False
-                    elif quit_rect.collidepoint(event.pos):
-                        running = False
+                # Draw explosions
+                for explosion in explosions[:]:
+                    radius = (explosion["size"] * explosion["frame"]) // 20
+                    alpha = 255 * (1 - explosion["frame"] / 20)
+                    explosion_surface = pygame.Surface(
+                        (radius * 2, radius * 2), pygame.SRCALPHA
+                    )
+                    pygame.draw.circle(
+                        explosion_surface, (*YELLOW, alpha), (radius, radius), radius
+                    )
+                    screen.blit(
+                        explosion_surface,
+                        (explosion["x"] - radius, explosion["y"] - radius),
+                    )
+                    explosion["frame"] += 1
+                    if explosion["frame"] >= 20:
+                        explosions.remove(explosion)
+
+                # Draw floating texts
+                for text in floating_texts[:]:
+                    text_surface = font.render(text["text"], True, text["color"])
+                    text_rect = text_surface.get_rect(
+                        center=(text["x"], text["y"] - text["frame"] * FLOAT_SPEED)
+                    )
+                    screen.blit(text_surface, text_rect)
+                    text["frame"] += 1
+                    if text["frame"] >= FLOAT_DURATION:
+                        floating_texts.remove(text)
+
+                # Draw HUD
+                score_text = font.render(f"Score: {score}", True, WHITE)
+                health_text = font.render(f"Health: {player_health}", True, WHITE)
+                ammo_text = font.render(f"Ammo: {ammo}", True, WHITE)
+                level_text = font.render(f"Level: {level}", True, WHITE)
+                time_left = level_duration - (current_time - level_timer)
+                timer_text = font.render(f"Next Level: {int(time_left)}s", True, WHITE)
+
+                # Left-aligned HUD elements
+                screen.blit(score_text, (10, 10))
+                screen.blit(health_text, (10, 50))
+                screen.blit(ammo_text, (10, 90))
+
+                # Right-aligned HUD elements
+                level_x = WIDTH - level_text.get_width() - 10  # 10px from right edge
+                timer_x = WIDTH - timer_text.get_width() - 10  # 10px from right edge
+                screen.blit(level_text, (level_x, 10))
+                screen.blit(timer_text, (timer_x, 50))
 
         pygame.display.flip()
         clock.tick(60)
