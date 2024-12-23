@@ -1,4 +1,4 @@
-name: Deploy Adventures in Space to GitHub Pages
+name: Deploy Games to GitHub Pages
 
 on:
   push:
@@ -34,9 +34,48 @@ jobs:
           python -m pip install --upgrade pip
           pip install pygbag==0.7.1
       
-      - name: Build with Pygbag
+      - name: Build Adventures in Space
         run: |
+          cd adventures-in-space
           python -m pygbag --build .
+          mkdir -p ../build/web/adventures-in-space
+          cp -r build/web/* ../build/web/adventures-in-space/
+      
+      - name: Build Santa vs. Grunch
+        run: |
+          cd santa-vs-grunch
+          python -m pygbag --build .
+          mkdir -p ../build/web/santa-vs-grunch
+          cp -r build/web/* ../build/web/santa-vs-grunch/
+      
+      - name: Create index page
+        run: |
+          cat > build/web/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Arcade Games</title>
+              <style>
+                  body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+                  .game-link { display: block; margin: 20px 0; padding: 20px; background: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; }
+                  .game-link:hover { background: #e0e0e0; }
+                  h1 { color: #333; }
+                  p { color: #666; }
+              </style>
+          </head>
+          <body>
+              <h1>Arcade Games</h1>
+              <a href="adventures-in-space/" class="game-link">
+                  <h2>Adventures in Space</h2>
+                  <p>Defend Earth's outposts from mysterious asteroids in this space shooter!</p>
+              </a>
+              <a href="santa-vs-grunch/" class="game-link">
+                  <h2>Santa vs. The Grunch</h2>
+                  <p>Help Santa collect and deliver presents while avoiding the Grunch!</p>
+              </a>
+          </body>
+          </html>
+          EOF
       
       - name: Setup Pages
         uses: actions/configure-pages@v5

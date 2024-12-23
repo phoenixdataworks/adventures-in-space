@@ -1,7 +1,12 @@
+"""
+PYGBAG_REQUIRE=pygame,asyncio,platform,json,math,random,time,os
+"""
+
 import pygame
 import random
 import math
 import os
+import asyncio
 
 # Initialize Pygame and its sound mixer
 pygame.init()
@@ -1088,15 +1093,20 @@ class Game:
 
         pygame.display.flip()
 
-    def run(self):
+    async def run(self):
         while self.running:
             self.clock.tick(FPS)
             self.handle_events()
             self.update()
             self.draw()
+            await asyncio.sleep(0)  # Allow other async operations
+
+
+async def main():
+    game = Game()
+    await game.run()
+    pygame.quit()
 
 
 if __name__ == "__main__":
-    game = Game()
-    game.run()
-    pygame.quit()
+    asyncio.run(main())

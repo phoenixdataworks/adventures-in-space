@@ -1,0 +1,37 @@
+{
+    "app": "main.py",
+    "title": "Adventures in Space",
+    "width": 800,
+    "height": 600,
+    "cache": true,
+    "python_version": "3.11",
+    "renderer": "software",
+    "focus_leave_policy": "pause",
+    "archive": [
+        "main.py",
+        "assets/**/*"
+    ],
+    "include": [
+        "pygame",
+        "asyncio",
+        "platform",
+        "json",
+        "math",
+        "random",
+        "time",
+        "os",
+        "sys",
+        "__EMSCRIPTEN__"
+    ],
+    "standalone": true,
+    "web": {
+        "canvas_resize_policy": "scale_inner"
+    },
+    "paths": [
+        "."
+    ],
+    "flags": [
+        "--preload-file",
+        "assets"
+    ]
+}
