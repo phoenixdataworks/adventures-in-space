@@ -4,27 +4,132 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Adventures in Space</title>
+    <title>Arcade Games</title>
     <style>
         body {
-            background: black;
+            margin: 0;
+            background-color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 100;
+        }
+
+        #progress-container {
+            width: 300px;
+            height: 30px;
+            background: #333;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.3s ease;
+        }
+
+        #loading-text {
+            margin-top: 10px;
+            font-size: 18px;
         }
 
         #canvas {
             position: absolute;
-            top: 0px;
-            left: 0px;
-            margin: 0px;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            display: block;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 14px;
+            color: #666;
         }
     </style>
 </head>
 
 <body>
+    <div id="loading">
+        <h1>Loading Arcade Games</h1>
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="loading-text">Initializing...</div>
+    </div>
     <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="status">Status: Loading...</div>
+
+    <script>
+        let canvas = document.getElementById('canvas');
+        let loading = document.getElementById('loading');
+        let progressBar = document.getElementById('progress-bar');
+        let loadingText = document.getElementById('loading-text');
+        let statusDiv = document.getElementById('status');
+
+        // Function to update loading progress
+        window.updateLoading = function (progress, message) {
+            progressBar.style.width = progress + '%';
+            loadingText.textContent = message;
+            if (progress >= 100) {
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                    statusDiv.textContent = 'Status: Ready';
+                }, 500);
+            }
+        }
+
+        // Handle window resize
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Load and configure pygbag
+        async function loadPyScript() {
+            let pygbag = document.createElement('script');
+            pygbag.src = 'main.js';
+            pygbag.async = true;
+            pygbag.type = 'module';
+            document.body.appendChild(pygbag);
+        }
+
+        // Start loading when the page is ready
+        window.addEventListener('load', function () {
+            loadPyScript();
+            statusDiv.textContent = 'Status: Loading Python...';
+        });
+
+        // Handle focus for better game controls
+        window.addEventListener('blur', function () {
+            statusDiv.textContent = 'Status: Paused (Click to resume)';
+        });
+        window.addEventListener('focus', function () {
+            statusDiv.textContent = 'Status: Running';
+        });
+    </script>
 </body>
 
 </html>

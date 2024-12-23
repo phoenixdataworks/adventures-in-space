@@ -1,13 +1,18 @@
 {
-    "app_name": "Adventures in Space",
+    "app_name": "Arcade Games",
     "app_version": "1.0",
     "archive": [
         "main.py",
-        "index.html"
+        "adventures_in_space.py",
+        "santa_vs_grunch.py",
+        "index.html",
+        "assets/*"
     ],
     "requirements": [
         "pygame>=2.5.0",
-        "asyncio>=3.4.3"
+        "asyncio>=3.4.3",
+        "python-dotenv",
+        "supabase"
     ],
     "main_script": "main.py",
     "serve": {
@@ -24,6 +29,10 @@
     },
     "web": {
         "canvas_resize_policy": "scale_inner",
-        "focus_leave_policy": "pause"
+        "focus_leave_policy": "pause",
+        "cache": true,
+        "ume_block": false,
+        "renderer": "webgl",
+        "high_dpi": true
     }
 }

@@ -25,10 +25,11 @@ ORANGE = (255, 165, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 191, 255)
 YELLOW = (255, 255, 0)
+DARK_RED = (139, 0, 0)  # For asteroid shading
 
 # Game settings
-player_width = 50
-player_height = 50
+player_width = 40
+player_height = 30
 player_x = WIDTH // 2 - player_width // 2
 player_y = HEIGHT - player_height - 10
 player_velocity = 0
@@ -71,8 +72,8 @@ FLOAT_SPEED = 2  # How fast the text floats up
 FLOAT_DURATION = 30  # How many frames the text stays visible
 
 # Game object sizes
-BULLET_RADIUS = 5
-TARGET_RADIUS = 20
+BULLET_RADIUS = 3
+TARGET_RADIUS = 25
 CARE_PACKAGE_SIZE = 30
 HEALTH_PACK_SIZE = 5
 
@@ -142,7 +143,14 @@ TIPS:
 
 def spawn_target():
     x = random.randint(TARGET_RADIUS, WIDTH - TARGET_RADIUS)
-    targets.append({"x": x, "y": -TARGET_RADIUS})
+    targets.append(
+        {
+            "x": x,
+            "y": -TARGET_RADIUS,
+            "rotation": random.uniform(0, 360),
+            "spin": random.uniform(-2, 2),
+        }
+    )
 
 
 def spawn_care_package():
@@ -156,8 +164,29 @@ def spawn_health_pack():
 
 
 def draw_player(x, y):
-    pygame.draw.rect(screen, ORANGE, (x, y, player_width, player_height))
-    health_text = font.render(str(player_health), True, BLACK)
+    # Draw spaceship body
+    ship_points = [
+        (x + player_width // 2, y),  # Nose
+        (x, y + player_height),  # Bottom left
+        (x + player_width // 2, y + player_height - 10),  # Bottom middle
+        (x + player_width, y + player_height),  # Bottom right
+    ]
+    pygame.draw.polygon(screen, WHITE, ship_points)
+
+    # Draw engine flames
+    flame_points = [
+        (x + player_width // 2 - 10, y + player_height),
+        (x + player_width // 2, y + player_height + 10),
+        (x + player_width // 2 + 10, y + player_height),
+    ]
+    pygame.draw.polygon(screen, ORANGE, flame_points)
+
+    # Draw cockpit
+    cockpit_rect = pygame.Rect(x + player_width // 4, y + 10, player_width // 2, 8)
+    pygame.draw.ellipse(screen, BLUE, cockpit_rect)
+
+    # Draw health indicator on the wing
+    health_text = font.render(str(player_health), True, GREEN)
     text_rect = health_text.get_rect(
         center=(x + player_width // 2, y + player_height // 2)
     )
@@ -445,33 +474,21 @@ async def game_loop():
                 )
 
             for target in targets:
-                pygame.draw.circle(
-                    screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
+                # Update rotation
+                target["rotation"] = (target["rotation"] + target["spin"]) % 360
+                draw_asteroid(
+                    screen,
+                    int(target["x"]),
+                    int(target["y"]),
+                    TARGET_RADIUS,
+                    target["rotation"],
                 )
 
             for package in care_packages:
-                pygame.draw.rect(
-                    screen,
-                    GREEN,
-                    (
-                        package["x"] - CARE_PACKAGE_SIZE // 2,
-                        package["y"] - CARE_PACKAGE_SIZE // 2,
-                        CARE_PACKAGE_SIZE,
-                        CARE_PACKAGE_SIZE,
-                    ),
-                )
+                draw_crate(screen, package["x"], package["y"])
 
             for pack in health_packs:
-                pygame.draw.rect(
-                    screen,
-                    BLUE,
-                    (
-                        pack["x"] - HEALTH_PACK_SIZE // 2,
-                        pack["y"] - HEALTH_PACK_SIZE // 2,
-                        HEALTH_PACK_SIZE,
-                        HEALTH_PACK_SIZE,
-                    ),
-                )
+                draw_heart(screen, pack["x"], pack["y"])
 
             # Game logic
             if knockback_timer > 0:
@@ -626,33 +643,19 @@ async def game_loop():
                 )
 
             for target in targets:
-                pygame.draw.circle(
-                    screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
+                draw_asteroid(
+                    screen,
+                    int(target["x"]),
+                    int(target["y"]),
+                    TARGET_RADIUS,
+                    target["rotation"],
                 )
 
             for package in care_packages:
-                pygame.draw.rect(
-                    screen,
-                    GREEN,
-                    (
-                        package["x"] - CARE_PACKAGE_SIZE // 2,
-                        package["y"] - CARE_PACKAGE_SIZE // 2,
-                        CARE_PACKAGE_SIZE,
-                        CARE_PACKAGE_SIZE,
-                    ),
-                )
+                draw_crate(screen, package["x"], package["y"])
 
             for pack in health_packs:
-                pygame.draw.rect(
-                    screen,
-                    BLUE,
-                    (
-                        pack["x"] - HEALTH_PACK_SIZE // 2,
-                        pack["y"] - HEALTH_PACK_SIZE // 2,
-                        HEALTH_PACK_SIZE,
-                        HEALTH_PACK_SIZE,
-                    ),
-                )
+                draw_heart(screen, pack["x"], pack["y"])
 
             # Draw explosions
             for explosion in explosions[:]:
@@ -721,3 +724,99 @@ if __name__ == "__main__":
 else:
     # Web platform
     asyncio.create_task(main())
+
+
+def draw_asteroid(screen, x, y, radius, rotation):
+    # Create points for an irregular asteroid shape
+    points = []
+    num_points = 8
+    for i in range(num_points):
+        angle = math.radians(rotation + (i * 360 / num_points))
+        # Vary the radius slightly for each point to make it look more like a real asteroid
+        variation = random.uniform(0.8, 1.2)
+        point_radius = radius * variation
+        point_x = x + math.cos(angle) * point_radius
+        point_y = y + math.sin(angle) * point_radius
+        points.append((int(point_x), int(point_y)))
+
+    # Draw the main asteroid body
+    pygame.draw.polygon(screen, RED, points)
+
+    # Draw some darker craters for detail
+    for _ in range(3):
+        crater_x = x + random.uniform(-radius / 2, radius / 2)
+        crater_y = y + random.uniform(-radius / 2, radius / 2)
+        crater_radius = radius / 4
+        pygame.draw.circle(
+            screen, DARK_RED, (int(crater_x), int(crater_y)), int(crater_radius)
+        )
+
+    # Add some highlight lines for texture
+    for _ in range(2):
+        start_angle = random.uniform(0, math.pi * 2)
+        end_angle = start_angle + random.uniform(math.pi / 4, math.pi / 2)
+        start_x = x + math.cos(start_angle) * (radius * 0.7)
+        start_y = y + math.sin(start_angle) * (radius * 0.7)
+        end_x = x + math.cos(end_angle) * (radius * 0.7)
+        end_y = y + math.sin(end_angle) * (radius * 0.7)
+        pygame.draw.line(
+            screen, DARK_RED, (int(start_x), int(start_y)), (int(end_x), int(end_y)), 2
+        )
+
+
+def draw_crate(screen, x, y):
+    # Draw main crate body
+    crate_rect = pygame.Rect(
+        x - CARE_PACKAGE_SIZE // 2,
+        y - CARE_PACKAGE_SIZE // 2,
+        CARE_PACKAGE_SIZE,
+        CARE_PACKAGE_SIZE,
+    )
+    pygame.draw.rect(screen, GREEN, crate_rect)
+    pygame.draw.rect(screen, (0, 100, 0), crate_rect, 2)  # Darker green border
+
+    # Draw ammo symbol
+    font = pygame.font.Font(None, 24)
+    ammo_text = font.render("+5", True, WHITE)
+    text_rect = ammo_text.get_rect(center=(x, y))
+    screen.blit(ammo_text, text_rect)
+
+    # Draw cross lines for crate texture
+    pygame.draw.line(
+        screen,
+        (0, 100, 0),
+        (x - CARE_PACKAGE_SIZE // 2, y - CARE_PACKAGE_SIZE // 2),
+        (x + CARE_PACKAGE_SIZE // 2, y + CARE_PACKAGE_SIZE // 2),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        (0, 100, 0),
+        (x - CARE_PACKAGE_SIZE // 2, y + CARE_PACKAGE_SIZE // 2),
+        (x + CARE_PACKAGE_SIZE // 2, y - CARE_PACKAGE_SIZE // 2),
+        2,
+    )
+
+
+def draw_heart(screen, x, y):
+    # Calculate heart dimensions
+    size = HEALTH_PACK_SIZE * 3  # Make heart slightly larger than original health pack
+
+    # Create the heart shape using circles and a triangle
+    left_center = (x - size // 4, y)
+    right_center = (x + size // 4, y)
+    radius = size // 4
+
+    # Draw the two circles for the top of the heart
+    pygame.draw.circle(screen, BLUE, left_center, radius)
+    pygame.draw.circle(screen, BLUE, right_center, radius)
+
+    # Draw the triangle for the bottom of the heart
+    points = [(x - size // 2, y), (x + size // 2, y), (x, y + size // 2)]
+    pygame.draw.polygon(screen, BLUE, points)
+
+    # Add a health symbol
+    font = pygame.font.Font(None, 20)
+    health_text = font.render("+10", True, WHITE)
+    text_rect = health_text.get_rect(center=(x, y))
+    screen.blit(health_text, text_rect)
