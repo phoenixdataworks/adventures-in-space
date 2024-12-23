@@ -32,11 +32,9 @@ player_x = WIDTH // 2 - player_width // 2
 player_y = HEIGHT - player_height - 10
 player_velocity = 0
 player_acceleration = 0.5
-player_base_max_speed = 8
-player_max_speed = player_base_max_speed
+player_max_speed = 8
 base_friction = 0.98
 player_friction = base_friction
-friction_decrease = 0.03
 min_friction = 0.8
 player_health = 100
 ammo = 15
@@ -52,8 +50,8 @@ level = 1
 level_timer = time.time()
 level_duration = 60
 speed_increase = 1.2
-target_speed = 3  # Add initial target speed here
-target_spawn_rate = 60  # Add initial spawn rate here
+target_speed = 3
+target_spawn_rate = 60
 clock = pygame.time.Clock()
 font = pygame.font.Font(None, 36)
 knockback_timer = 0
@@ -248,14 +246,13 @@ def reset_game():
     global player_health, player_velocity, player_x, ammo, score, level, level_timer
     global entering_name, name_submitted, player_name, knockback_timer, player_friction
     global bullets, targets, care_packages, health_packs, explosions, target_speed, target_spawn_rate
-    global floating_texts, player_max_speed
+    global floating_texts
 
     # Reset player
     player_health = 100
     player_velocity = 0
     player_x = WIDTH // 2 - player_width // 2
     ammo = 15
-    player_max_speed = player_base_max_speed  # Reset max speed to base value
 
     # Reset game state
     score = 0
@@ -352,13 +349,12 @@ def wrap_text(text, font, max_width):
 async def game_loop():
     global player_health, player_velocity, player_x, ammo, score, level, level_timer
     global entering_name, name_submitted, player_name, knockback_timer, player_friction
-    global target_speed, target_spawn_rate, game_started, player_max_speed
+    global target_speed, target_spawn_rate, game_started
 
     running = True
     frames = 0
     game_over = False
     last_time = time.time()
-    player_max_speed = player_base_max_speed  # Initialize at start
 
     while running:
         if is_web():
@@ -481,11 +477,6 @@ async def game_loop():
                 level_timer = current_time
                 target_speed = 3 * (speed_increase ** (level - 1))
                 target_spawn_rate = max(10, 60 - (level * 5))
-                # Update friction and max speed based on level
-                player_friction = max(
-                    base_friction - (friction_decrease * (level - 1)), min_friction
-                )
-                player_max_speed = player_base_max_speed * (1 + (level - 1) * 0.2)
 
             # Draw game objects
             for bullet in bullets:
@@ -661,95 +652,95 @@ async def game_loop():
                     create_floating_text("+10", pack["x"], pack["y"], BLUE)
                     health_packs.remove(pack)
 
-            # Drawing
-            if not game_over:
-                draw_player(player_x, player_y)
+        # Drawing
+        if not game_over:
+            draw_player(player_x, player_y)
 
-                # Draw game objects
-                for bullet in bullets:
-                    pygame.draw.circle(
-                        screen,
-                        WHITE,
-                        (int(bullet["x"]), int(bullet["y"])),
-                        BULLET_RADIUS,
-                    )
+            # Draw game objects
+            for bullet in bullets:
+                pygame.draw.circle(
+                    screen,
+                    WHITE,
+                    (int(bullet["x"]), int(bullet["y"])),
+                    BULLET_RADIUS,
+                )
 
-                for target in targets:
-                    pygame.draw.circle(
-                        screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
-                    )
+            for target in targets:
+                pygame.draw.circle(
+                    screen, RED, (int(target["x"]), int(target["y"])), TARGET_RADIUS
+                )
 
-                for package in care_packages:
-                    pygame.draw.rect(
-                        screen,
-                        GREEN,
-                        (
-                            package["x"] - CARE_PACKAGE_SIZE // 2,
-                            package["y"] - CARE_PACKAGE_SIZE // 2,
-                            CARE_PACKAGE_SIZE,
-                            CARE_PACKAGE_SIZE,
-                        ),
-                    )
+            for package in care_packages:
+                pygame.draw.rect(
+                    screen,
+                    GREEN,
+                    (
+                        package["x"] - CARE_PACKAGE_SIZE // 2,
+                        package["y"] - CARE_PACKAGE_SIZE // 2,
+                        CARE_PACKAGE_SIZE,
+                        CARE_PACKAGE_SIZE,
+                    ),
+                )
 
-                for pack in health_packs:
-                    pygame.draw.rect(
-                        screen,
-                        BLUE,
-                        (
-                            pack["x"] - HEALTH_PACK_SIZE // 2,
-                            pack["y"] - HEALTH_PACK_SIZE // 2,
-                            HEALTH_PACK_SIZE,
-                            HEALTH_PACK_SIZE,
-                        ),
-                    )
+            for pack in health_packs:
+                pygame.draw.rect(
+                    screen,
+                    BLUE,
+                    (
+                        pack["x"] - HEALTH_PACK_SIZE // 2,
+                        pack["y"] - HEALTH_PACK_SIZE // 2,
+                        HEALTH_PACK_SIZE,
+                        HEALTH_PACK_SIZE,
+                    ),
+                )
 
-                # Draw explosions
-                for explosion in explosions[:]:
-                    radius = (explosion["size"] * explosion["frame"]) // 20
-                    alpha = 255 * (1 - explosion["frame"] / 20)
-                    explosion_surface = pygame.Surface(
-                        (radius * 2, radius * 2), pygame.SRCALPHA
-                    )
-                    pygame.draw.circle(
-                        explosion_surface, (*YELLOW, alpha), (radius, radius), radius
-                    )
-                    screen.blit(
-                        explosion_surface,
-                        (explosion["x"] - radius, explosion["y"] - radius),
-                    )
-                    explosion["frame"] += 1
-                    if explosion["frame"] >= 20:
-                        explosions.remove(explosion)
+            # Draw explosions
+            for explosion in explosions[:]:
+                radius = (explosion["size"] * explosion["frame"]) // 20
+                alpha = 255 * (1 - explosion["frame"] / 20)
+                explosion_surface = pygame.Surface(
+                    (radius * 2, radius * 2), pygame.SRCALPHA
+                )
+                pygame.draw.circle(
+                    explosion_surface, (*YELLOW, alpha), (radius, radius), radius
+                )
+                screen.blit(
+                    explosion_surface,
+                    (explosion["x"] - radius, explosion["y"] - radius),
+                )
+                explosion["frame"] += 1
+                if explosion["frame"] >= 20:
+                    explosions.remove(explosion)
 
-                # Draw floating texts
-                for text in floating_texts[:]:
-                    text_surface = font.render(text["text"], True, text["color"])
-                    text_rect = text_surface.get_rect(
-                        center=(text["x"], text["y"] - text["frame"] * FLOAT_SPEED)
-                    )
-                    screen.blit(text_surface, text_rect)
-                    text["frame"] += 1
-                    if text["frame"] >= FLOAT_DURATION:
-                        floating_texts.remove(text)
+            # Draw floating texts
+            for text in floating_texts[:]:
+                text_surface = font.render(text["text"], True, text["color"])
+                text_rect = text_surface.get_rect(
+                    center=(text["x"], text["y"] - text["frame"] * FLOAT_SPEED)
+                )
+                screen.blit(text_surface, text_rect)
+                text["frame"] += 1
+                if text["frame"] >= FLOAT_DURATION:
+                    floating_texts.remove(text)
 
-                # Draw HUD
-                score_text = font.render(f"Score: {score}", True, WHITE)
-                health_text = font.render(f"Health: {player_health}", True, WHITE)
-                ammo_text = font.render(f"Ammo: {ammo}", True, WHITE)
-                level_text = font.render(f"Level: {level}", True, WHITE)
-                time_left = level_duration - (current_time - level_timer)
-                timer_text = font.render(f"Next Level: {int(time_left)}s", True, WHITE)
+            # Draw HUD
+            score_text = font.render(f"Score: {score}", True, WHITE)
+            health_text = font.render(f"Health: {player_health}", True, WHITE)
+            ammo_text = font.render(f"Ammo: {ammo}", True, WHITE)
+            level_text = font.render(f"Level: {level}", True, WHITE)
+            time_left = level_duration - (current_time - level_timer)
+            timer_text = font.render(f"Next Level: {int(time_left)}s", True, WHITE)
 
-                # Left-aligned HUD elements
-                screen.blit(score_text, (10, 10))
-                screen.blit(health_text, (10, 50))
-                screen.blit(ammo_text, (10, 90))
+            # Left-aligned HUD elements
+            screen.blit(score_text, (10, 10))
+            screen.blit(health_text, (10, 50))
+            screen.blit(ammo_text, (10, 90))
 
-                # Right-aligned HUD elements
-                level_x = WIDTH - level_text.get_width() - 10  # 10px from right edge
-                timer_x = WIDTH - timer_text.get_width() - 10  # 10px from right edge
-                screen.blit(level_text, (level_x, 10))
-                screen.blit(timer_text, (timer_x, 50))
+            # Right-aligned HUD elements
+            level_x = WIDTH - level_text.get_width() - 10  # 10px from right edge
+            timer_x = WIDTH - timer_text.get_width() - 10  # 10px from right edge
+            screen.blit(level_text, (level_x, 10))
+            screen.blit(timer_text, (timer_x, 50))
 
         pygame.display.flip()
         clock.tick(60)
