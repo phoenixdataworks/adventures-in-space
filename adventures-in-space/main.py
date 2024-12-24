@@ -628,6 +628,10 @@ async def main():
                 )
         else:
             # Game logic
+            if player_health <= 0:
+                game_over = True
+                continue  # Skip to next frame if game is over
+
             if current_time - level_timer >= level_duration:
                 level += 1
                 level_timer = current_time
@@ -648,13 +652,13 @@ async def main():
                 if keys[pygame.K_RIGHT]:
                     player_velocity += player_acceleration
 
-                # Apply physics
-                player_velocity *= player_friction
-                player_velocity = max(
-                    min(player_velocity, player_max_speed), -player_max_speed
-                )
-                player_x += player_velocity
-                player_x = max(0, min(player_x, WIDTH - player_width))
+            # Apply physics
+            player_velocity *= player_friction
+            player_velocity = max(
+                min(player_velocity, player_max_speed), -player_max_speed
+            )
+            player_x += player_velocity
+            player_x = max(0, min(player_x, WIDTH - player_width))
 
             # Spawn objects
             frames += 1
@@ -688,9 +692,7 @@ def update_game_objects():
     # Update targets
     for target in targets[:]:
         target["y"] += target_speed
-        target["rotation"] = (
-            target["rotation"] + target["spin"]
-        ) % 360  # Update rotation
+        target["rotation"] = (target["rotation"] + target["spin"]) % 360
         if target["y"] > HEIGHT:
             targets.remove(target)
 
@@ -848,15 +850,18 @@ def check_collisions():
             (player_center_x - target["x"]) ** 2 + (player_center_y - target["y"]) ** 2
         )
         if distance < 45:
-            player_health -= 10
+            # Apply damage and check for game over
+            player_health = max(0, player_health - 10)  # Prevent negative health
+            if player_health <= 0:
+                game_over = True
+                return  # Exit immediately if game is over
+
             # Calculate knockback direction and apply force
             impact_direction = -1 if target["x"] > player_center_x else 1
             player_velocity = PLAYER_KNOCKBACK_FORCE * impact_direction
             knockback_timer = KNOCKBACK_DURATION
             targets.remove(target)
             create_explosion(target["x"], target["y"], PLAYER_HIT_EXPLOSION_SIZE)
-            if player_health <= 0:
-                game_over = True
 
     # Collision with care packages (only if not shot)
     for package in care_packages[:]:
