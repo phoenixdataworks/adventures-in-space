@@ -13,6 +13,11 @@
 # ]
 # ///
 
+"""
+Adventures in Space - Space shooter with particle effects and parallax stars
+Enhanced version with improved gameplay, power-ups, and leaderboard integration
+"""
+
 import asyncio
 import pygame
 import random
@@ -23,13 +28,83 @@ import os
 import sys
 import platform
 
+# Add parent directory to path for engine imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import shared engine modules
+from engine import (
+    ScreenShake,
+    SpatialGrid,
+    check_circle_collision,
+    check_circle_rect_collision,
+    ObjectPool,
+    clamp,
+    lerp,
+    distance,
+)
+
+# Import Supabase configuration
+from supabase_config import save_score, get_leaderboard
+
 # Initialize Pygame
 pygame.init()
 pygame.mixer.init()
 
-# Set up the display
-WIDTH = 800
-HEIGHT = 600
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+class Config:
+    """Game configuration constants"""
+    # Display
+    WIDTH = 800
+    HEIGHT = 600
+    FPS = 60
+    
+    # Player
+    PLAYER_WIDTH = 50
+    PLAYER_HEIGHT = 50
+    PLAYER_MAX_SPEED = 8
+    PLAYER_ACCELERATION = 0.5
+    PLAYER_FRICTION = 0.98
+    PLAYER_INITIAL_HEALTH = 100
+    PLAYER_INITIAL_AMMO = 15
+    PLAYER_INVULNERABLE_FRAMES = 60
+    PLAYER_KNOCKBACK_FRAMES = 10
+    
+    # Bullet
+    BULLET_SPEED = 10
+    BULLET_RADIUS = 5
+    
+    # Asteroid
+    ASTEROID_BASE_SPEED = 3
+    ASTEROID_BASE_SPAWN_RATE = 60
+    ASTEROID_MIN_SPAWN_RATE = 15
+    ASTEROID_RADIUS = 20
+    
+    # Pickups
+    CARE_PACKAGE_AMMO = 5
+    HEALTH_PACK_HEAL = 10
+    CARE_PACKAGE_SPAWN_RATE = 300
+    HEALTH_PACK_SPAWN_RATE = 240
+    
+    # Power-ups
+    SHIELD_DURATION = 300  # 5 seconds at 60fps
+    RAPID_FIRE_DURATION = 300
+    RAPID_FIRE_COOLDOWN = 5  # frames between shots
+    
+    # Level progression
+    LEVEL_DURATION = 60  # seconds
+    LEVEL_SPEED_MULTIPLIER = 1.2
+    
+    # Scoring
+    SCORE_ASTEROID_DESTROY = 10
+    SCORE_HOMING_DESTROY = 25
+    SCORE_FAST_DESTROY = 15
+    SCORE_SPLITTING_DESTROY = 20
+
+
+# Global config instance
+CFG = Config()
 
 
 def is_web():
@@ -41,7 +116,6 @@ def get_canvas():
         try:
             import __EMSCRIPTEN__
             from javascript import document
-
             return document.getElementById("canvas")
         except ImportError:
             print("Running outside web context")
@@ -51,72 +125,20 @@ def get_canvas():
 
 
 def init_display():
-    global WIDTH, HEIGHT
     canvas = get_canvas()
     if canvas:
         try:
-            WIDTH = canvas.width
-            HEIGHT = canvas.height
+            CFG.WIDTH = canvas.width
+            CFG.HEIGHT = canvas.height
             canvas.style.imageRendering = "pixelated"
         except Exception as e:
             print(f"Error setting canvas properties: {e}")
-
-    return pygame.display.set_mode((WIDTH, HEIGHT))
+    return pygame.display.set_mode((CFG.WIDTH, CFG.HEIGHT))
 
 
 # Initialize display
 screen = init_display()
 pygame.display.set_caption("Adventures in Space")
-
-# Initialize font
-try:
-    font = pygame.font.Font(None, 36)
-except Exception as e:
-    print(f"Error loading font: {e}")
-    # Fallback to default system font
-    fonts = pygame.font.get_fonts()
-    if fonts:
-        try:
-            font = pygame.font.SysFont(fonts[0], 36)
-        except:
-            print("Could not load any font")
-            # Create a minimal font as last resort
-            font = pygame.font.Font(None, 36)
-
-# Mock leaderboard for web version
-MOCK_LEADERBOARD = []
-
-
-async def save_score(player_name, score, level):
-    global MOCK_LEADERBOARD
-    entry = {"player_name": player_name, "score": score, "level": level}
-    MOCK_LEADERBOARD.append(entry)
-    MOCK_LEADERBOARD.sort(key=lambda x: x["score"], reverse=True)
-    MOCK_LEADERBOARD = MOCK_LEADERBOARD[:5]  # Keep top 5 scores
-    return entry
-
-
-async def get_leaderboard(limit=5):
-    return MOCK_LEADERBOARD[:limit]
-
-
-# Load sounds
-def load_sound(name):
-    if is_web():
-        return pygame.mixer.Sound(f"assets/sounds/{name}.ogg")
-    else:
-        # For desktop, we can support multiple formats
-        for ext in [".ogg", ".wav"]:
-            path = f"assets/sounds/{name}{ext}"
-            if os.path.exists(path):
-                return pygame.mixer.Sound(path)
-    return None
-
-
-# Initialize sounds
-# shoot_sound = load_sound("shoot")
-# explosion_sound = load_sound("explosion")
-# powerup_sound = load_sound("powerup")
 
 # Colors
 WHITE = (255, 255, 255)
@@ -126,773 +148,1551 @@ ORANGE = (255, 165, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 191, 255)
 YELLOW = (255, 255, 0)
-DARK_RED = (139, 0, 0)  # For asteroid shading
-
-# Game settings
-player_width = 50
-player_height = 50
-player_x = WIDTH // 2 - player_width // 2
-player_y = HEIGHT - player_height - 10
-player_velocity = 0
-player_acceleration = 0.5
-player_max_speed = 8
-base_friction = 0.98
-player_friction = base_friction
-min_friction = 0.8
-player_health = 100
-ammo = 15
-
-# Game state
-bullets = []
-targets = []
-care_packages = []
-health_packs = []
-explosions = []
-score = 0
-level = 1
-level_timer = time.time()
-level_duration = 60
-speed_increase = 1.2
-target_speed = 3
-target_spawn_rate = 60
-clock = pygame.time.Clock()
-font = pygame.font.Font(None, 36)
-knockback_timer = 0
-floating_texts = []
-
-# Game constants
-LEADERBOARD_FILE = "leaderboard.json"
-MAX_LEADERBOARD_ENTRIES = 5
-MAX_NAME_LENGTH = 10
-DEFAULT_NAME = "PLAYER"
-PLAYER_KNOCKBACK_FORCE = 15
-PLAYER_HIT_EXPLOSION_SIZE = 45
-KNOCKBACK_DURATION = 10  # frames of knockback effect
-HEALTH_BONUS = 10  # Changed from 15 to 10
-FLOAT_SPEED = 2  # How fast the text floats up
-FLOAT_DURATION = 30  # How many frames the text stays visible
-
-# Game object sizes
-BULLET_RADIUS = 5
-TARGET_RADIUS = 20
-CARE_PACKAGE_SIZE = 30
-HEALTH_PACK_SIZE = 5
-
-# Star settings
-STAR_LAYERS = [
-    {"count": 300, "size": 1},  # Tiny stars
-    {"count": 150, "size": 2},  # Medium stars
-    {"count": 75, "size": 3},  # Large stars
-    {"count": 25, "size": 4},  # Extra bright stars
-]
+DARK_RED = (139, 0, 0)
+PURPLE = (128, 0, 255)
+CYAN = (0, 255, 255)
+GOLD = (255, 215, 0)
+MAGENTA = (255, 0, 255)
 
 
-class Star:
-    def __init__(self, size):
-        self.x = random.randint(0, WIDTH)
-        self.y = random.randint(0, HEIGHT)
+# ============================================================================
+# FONTS - Cached for performance
+# ============================================================================
+class Fonts:
+    small = None
+    medium = None
+    large = None
+    title = None
+    
+    @classmethod
+    def init(cls):
+        cls.small = pygame.font.Font(None, 24)
+        cls.medium = pygame.font.Font(None, 36)
+        cls.large = pygame.font.Font(None, 48)
+        cls.title = pygame.font.Font(None, 64)
+
+
+Fonts.init()
+
+
+# ============================================================================
+# PARTICLE SYSTEM (Lightweight inline version)
+# ============================================================================
+class Particle:
+    __slots__ = ['x', 'y', 'vx', 'vy', 'lifetime', 'max_lifetime', 
+                 'color', 'size', 'initial_size', 'gravity', 'active']
+    
+    def __init__(self, x, y, vx, vy, lifetime, color, size, gravity=0):
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.lifetime = lifetime
+        self.max_lifetime = lifetime
+        self.color = color
         self.size = size
-        # Make all stars very bright
-        self.color = (255, 255, 255)  # Pure white
-
-    def draw(self, screen):
-        # Draw a filled circle for better visibility
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.size, 0)
-
-
-# Initialize star layers
-star_field = []
-for layer in STAR_LAYERS:
-    stars = [Star(layer["size"]) for _ in range(layer["count"])]
-    star_field.append(stars)
-
-
-def draw_stars():
-    # Draw each star as a small filled circle
-    for layer in star_field:
-        for star in layer:
-            pygame.draw.circle(
-                screen, star.color, (int(star.x), int(star.y)), star.size, 0
-            )
-
-
-# Game state variables
-player_name = ""
-entering_name = False
-name_submitted = False
-game_started = False  # New variable to track if game has started
-
-# Add button constants
-BUTTON_WIDTH = 200
-BUTTON_HEIGHT = 50
-BUTTON_COLOR = BLUE
-BUTTON_HOVER_COLOR = (0, 150, 255)  # Lighter blue for hover
-
-# Story and instructions
-STORY_TEXT = """In the year 2157, humanity's insatiable curiosity led you to the far reaches of space. As an elite Space Defense pilot, you patrol the dangerous Asteroid Belt between Mars and Jupiter. But something's wrong - these aren't normal asteroids. They're moving with purpose, threatening Earth's outposts.
-
-Your mission: Defend our space territory using your advanced Nerf-based weapon system. The deeper you venture into space, the faster and more unpredictable the threats become."""
-
-INSTRUCTIONS_TEXT = """CONTROLS:
-← → Arrow Keys to move
-SPACE to shoot
-
-TIPS:
-- Green boxes give ammo (+5)
-- Blue boxes restore health (+10)
-- Watch out for red asteroids!
-- Movement becomes faster and more slippery in higher levels"""
-
-
-def spawn_target():
-    x = random.randint(TARGET_RADIUS, WIDTH - TARGET_RADIUS)
-    targets.append(
-        {
-            "x": x,
-            "y": -TARGET_RADIUS,
-            "rotation": random.uniform(0, 360),
-            "spin": random.uniform(-2, 2),
-        }
-    )
-
-
-def spawn_care_package():
-    x = random.randint(CARE_PACKAGE_SIZE, WIDTH - CARE_PACKAGE_SIZE)
-    care_packages.append({"x": x, "y": -CARE_PACKAGE_SIZE})
-
-
-def spawn_health_pack():
-    x = random.randint(HEALTH_PACK_SIZE, WIDTH - HEALTH_PACK_SIZE)
-    health_packs.append({"x": x, "y": -HEALTH_PACK_SIZE})
-
-
-def draw_player(x, y):
-    # Draw spaceship body
-    ship_points = [
-        (x + player_width // 2, y),  # Nose
-        (x, y + player_height),  # Bottom left
-        (x + player_width // 2, y + player_height - 10),  # Bottom middle
-        (x + player_width, y + player_height),  # Bottom right
-    ]
-    pygame.draw.polygon(screen, WHITE, ship_points)
-
-    # Draw engine flames
-    flame_points = [
-        (x + player_width // 2 - 10, y + player_height),
-        (x + player_width // 2, y + player_height + 10),
-        (x + player_width // 2 + 10, y + player_height),
-    ]
-    pygame.draw.polygon(screen, ORANGE, flame_points)
-
-    # Draw cockpit
-    cockpit_rect = pygame.Rect(x + player_width // 4, y + 10, player_width // 2, 8)
-    pygame.draw.ellipse(screen, BLUE, cockpit_rect)
-
-    # Draw health indicator on the wing
-    health_text = font.render(str(player_health), True, GREEN)
-    text_rect = health_text.get_rect(
-        center=(x + player_width // 2, y + player_height // 2)
-    )
-    screen.blit(health_text, text_rect)
-
-
-def shoot(x, y):
-    global ammo
-    if ammo > 0:
-        bullets.append({"x": x + player_width // 2, "y": y})
-        ammo -= 1
-        # if shoot_sound:
-        #    shoot_sound.play()
-
-
-def create_explosion(x, y, size=30):
-    explosions.append({"x": x, "y": y, "frame": 0, "size": size})
-    # if explosion_sound:
-    #    explosion_sound.play()
-
-
-def draw_name_input(screen, name):
-    input_box = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2 - 30, 200, 40)
-    pygame.draw.rect(screen, WHITE, input_box, 2)
-    prompt_text = font.render("Enter your name:", True, WHITE)
-    screen.blit(prompt_text, (WIDTH // 2 - 100, HEIGHT // 2 - 60))
-    name_text = font.render(name + "▋", True, WHITE)
-    name_rect = name_text.get_rect(center=input_box.center)
-    screen.blit(name_text, name_rect)
-    submit_text = font.render("Press ENTER to submit", True, YELLOW)
-    screen.blit(submit_text, (WIDTH // 2 - 100, HEIGHT // 2 + 20))
-
-
-def draw_button(text, x, y, mouse_pos):
-    button_rect = pygame.Rect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT)
-    hover = button_rect.collidepoint(mouse_pos)
-    color = (0, 150, 255) if hover else BLUE  # Lighter blue for hover
-    pygame.draw.rect(screen, color, button_rect)
-    pygame.draw.rect(screen, WHITE, button_rect, 2)  # White border
-
-    button_text = font.render(text, True, WHITE)
-    text_rect = button_text.get_rect(center=button_rect.center)
-    screen.blit(button_text, text_rect)
-    return button_rect
-
-
-def reset_game():
-    global player_health, player_velocity, player_x, ammo, score, level, level_timer
-    global entering_name, name_submitted, player_name, knockback_timer, player_friction
-    global target_speed, target_spawn_rate
-
-    # Reset player
-    player_health = 100
-    player_velocity = 0
-    player_x = WIDTH // 2 - player_width // 2
-    ammo = 15
-
-    # Reset game state
-    score = 0
-    level = 1
-    level_timer = time.time()
-    player_friction = base_friction
-    knockback_timer = 0
-    target_speed = 3
-    target_spawn_rate = 60
-
-    # Clear lists
-    bullets.clear()
-    targets.clear()
-    care_packages.clear()
-    health_packs.clear()
-    explosions.clear()
-    floating_texts.clear()
-
-    # Reset name entry
-    entering_name = False
-    name_submitted = False
-    player_name = ""
-
-
-def create_floating_text(text, x, y, color=WHITE):
-    floating_texts.append({"text": text, "x": x, "y": y, "color": color, "frame": 0})
-
-
-def draw_start_screen():
-    screen.fill(BLACK)
-    draw_stars()  # Draw stars before anything else
-
-    # Draw title
-    title_font = pygame.font.Font(None, 64)
-    title_text = title_font.render("Adventures in Space", True, YELLOW)
-    screen.blit(title_text, (WIDTH // 2 - title_text.get_rect().width // 2, 50))
-
-    # Draw story
-    y_pos = 150
-    wrapped_story = wrap_text(STORY_TEXT, font, WIDTH - 100)
-    for line in wrapped_story:
-        text_surface = font.render(line, True, WHITE)
-        screen.blit(text_surface, (50, y_pos))
-        y_pos += 30
-
-    # Draw instructions
-    y_pos += 30
-    wrapped_instructions = wrap_text(INSTRUCTIONS_TEXT, font, WIDTH - 100)
-    for line in wrapped_instructions:
-        text_surface = font.render(line, True, BLUE)
-        screen.blit(text_surface, (50, y_pos))
-        y_pos += 30
-
-    # Draw start button with mouse hover detection
-    mouse_pos = pygame.mouse.get_pos()
-    button_rect = pygame.Rect(
-        WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT - 100, BUTTON_WIDTH, BUTTON_HEIGHT
-    )
-    hover = button_rect.collidepoint(mouse_pos)
-
-    return draw_button(
-        "START MISSION", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT - 100, mouse_pos
-    )
-
-
-def wrap_text(text, font, max_width):
-    words = text.split()
-    lines = []
-    current_line = []
-
-    for word in words:
-        # Add word to test line
-        test_line = current_line + [word]
-        test_surface = font.render(" ".join(test_line), True, WHITE)
-
-        # If test line is too wide, save current line and start new one
-        if test_surface.get_rect().width > max_width:
-            if current_line:  # Only save if there are words in current line
-                lines.append(" ".join(current_line))
-                current_line = [word]
-            else:  # If single word is too long, force it on its own line
-                lines.append(word)
-                current_line = []
+        self.initial_size = size
+        self.gravity = gravity
+        self.active = True
+    
+    def update(self):
+        if not self.active:
+            return
+        
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += self.gravity
+        self.vx *= 0.98
+        self.vy *= 0.98
+        
+        self.lifetime -= 1
+        if self.lifetime <= 0:
+            self.active = False
+            return
+        
+        progress = 1 - (self.lifetime / self.max_lifetime)
+        self.size = self.initial_size * (1 - progress * 0.8)
+    
+    def draw(self, surface):
+        if not self.active or self.size < 1:
+            return
+        
+        alpha = int(255 * (self.lifetime / self.max_lifetime))
+        size = max(1, int(self.size))
+        
+        if alpha < 255:
+            particle_surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            color_with_alpha = (*self.color[:3], alpha)
+            pygame.draw.circle(particle_surf, color_with_alpha, (size, size), size)
+            surface.blit(particle_surf, (int(self.x) - size, int(self.y) - size))
         else:
-            current_line = test_line
-
-    # Add the last line if there are remaining words
-    if current_line:
-        lines.append(" ".join(current_line))
-
-    return lines
+            pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), size)
 
 
-def draw_asteroid(screen, x, y, radius, rotation):
-    # Create points for an irregular asteroid shape
-    points = []
-    num_points = 8
-    for i in range(num_points):
-        angle = math.radians(rotation + (i * 360 / num_points))
-        # Vary the radius slightly for each point to make it look more like a real asteroid
-        variation = random.uniform(0.8, 1.2)
-        point_radius = radius * variation
-        point_x = x + math.cos(angle) * point_radius
-        point_y = y + math.sin(angle) * point_radius
-        points.append((int(point_x), int(point_y)))
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+    
+    def create_explosion(self, x, y, color=ORANGE, count=25, speed=5, size=6):
+        """Create an explosion effect"""
+        colors = [
+            color,
+            (min(255, color[0] + 50), max(0, color[1] - 30), max(0, color[2] - 30)),
+            YELLOW,
+            WHITE
+        ]
+        for _ in range(count):
+            angle = random.uniform(0, 2 * math.pi)
+            velocity = random.uniform(speed * 0.3, speed)
+            vx = math.cos(angle) * velocity
+            vy = math.sin(angle) * velocity
+            lifetime = random.randint(15, 35)
+            particle_color = random.choice(colors)
+            particle_size = random.uniform(size * 0.4, size)
+            
+            self.particles.append(Particle(
+                x, y, vx, vy, lifetime, particle_color, particle_size, gravity=0.05
+            ))
+    
+    def create_thrust(self, x, y):
+        """Create engine thrust particles"""
+        for _ in range(2):
+            vx = random.uniform(-0.5, 0.5)
+            vy = random.uniform(2, 4)
+            color = random.choice([ORANGE, YELLOW, RED])
+            self.particles.append(Particle(
+                x + random.uniform(-5, 5), y, vx, vy, 
+                random.randint(8, 15), color, random.uniform(3, 6)
+            ))
+    
+    def create_hit(self, x, y, color=RED):
+        """Create damage hit effect"""
+        for _ in range(15):
+            angle = random.uniform(0, 2 * math.pi)
+            velocity = random.uniform(2, 6)
+            vx = math.cos(angle) * velocity
+            vy = math.sin(angle) * velocity
+            self.particles.append(Particle(
+                x, y, vx, vy, random.randint(10, 25), color, random.uniform(3, 7)
+            ))
+    
+    def create_collect(self, x, y, color=GREEN):
+        """Create collect/pickup effect"""
+        for _ in range(12):
+            angle = random.uniform(0, 2 * math.pi)
+            velocity = random.uniform(1, 3)
+            vx = math.cos(angle) * velocity
+            vy = math.sin(angle) * velocity - 1
+            self.particles.append(Particle(
+                x, y, vx, vy, random.randint(15, 30), color, random.uniform(2, 5), gravity=-0.05
+            ))
+    
+    def create_bullet_trail(self, x, y):
+        """Create bullet trail"""
+        self.particles.append(Particle(
+            x + random.uniform(-2, 2), y + 5, 0, 0.5,
+            8, (200, 200, 255), 3
+        ))
+    
+    def create_shield_sparkle(self, x, y, radius):
+        """Create shield sparkle effect"""
+        angle = random.uniform(0, 2 * math.pi)
+        px = x + math.cos(angle) * radius
+        py = y + math.sin(angle) * radius
+        self.particles.append(Particle(
+            px, py, random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5),
+            random.randint(10, 20), CYAN, random.uniform(2, 4)
+        ))
+    
+    def create_bomb_wave(self, x, y):
+        """Create bomb explosion wave"""
+        for _ in range(50):
+            angle = random.uniform(0, 2 * math.pi)
+            velocity = random.uniform(8, 15)
+            vx = math.cos(angle) * velocity
+            vy = math.sin(angle) * velocity
+            color = random.choice([WHITE, YELLOW, ORANGE, RED])
+            self.particles.append(Particle(
+                x, y, vx, vy, random.randint(20, 40), color, random.uniform(4, 10), gravity=0
+            ))
+    
+    def update(self):
+        self.particles = [p for p in self.particles if p.active]
+        for particle in self.particles:
+            particle.update()
+    
+    def draw(self, surface):
+        for particle in self.particles:
+            particle.draw(surface)
+    
+    def clear(self):
+        self.particles.clear()
 
-    # Draw the main asteroid body
-    pygame.draw.polygon(screen, RED, points)
 
-    # Draw some darker craters for detail
-    for _ in range(3):
-        crater_x = x + random.uniform(-radius / 2, radius / 2)
-        crater_y = y + random.uniform(-radius / 2, radius / 2)
-        crater_radius = radius / 4
-        pygame.draw.circle(
-            screen, DARK_RED, (int(crater_x), int(crater_y)), int(crater_radius)
+# ============================================================================
+# PARALLAX STAR FIELD
+# ============================================================================
+class ParallaxStar:
+    __slots__ = ['x', 'y', 'speed', 'size', 'twinkle', 'twinkle_offset', 
+                 'base_brightness', 'color_tint']
+    
+    def __init__(self, layer_speed, size, twinkle=False):
+        self.x = random.randint(0, CFG.WIDTH)
+        self.y = random.randint(0, CFG.HEIGHT)
+        self.speed = layer_speed
+        self.size = size
+        self.twinkle = twinkle
+        self.twinkle_offset = random.uniform(0, 2 * math.pi)
+        self.base_brightness = random.randint(150, 255)
+        self.color_tint = random.choice([
+            (255, 255, 255),
+            (200, 220, 255),
+            (255, 240, 220),
+            (255, 200, 200),
+        ])
+    
+    def update(self, dt=1):
+        self.y += self.speed * dt
+        if self.y > CFG.HEIGHT:
+            self.y = -self.size
+            self.x = random.randint(0, CFG.WIDTH)
+    
+    def draw(self, surface, time_offset=0):
+        if self.twinkle:
+            brightness = self.base_brightness + math.sin(time_offset * 3 + self.twinkle_offset) * 50
+            brightness = max(100, min(255, brightness))
+        else:
+            brightness = self.base_brightness
+        
+        factor = brightness / 255
+        color = (
+            int(self.color_tint[0] * factor),
+            int(self.color_tint[1] * factor),
+            int(self.color_tint[2] * factor)
         )
-
-    # Add some highlight lines for texture
-    for _ in range(2):
-        start_angle = random.uniform(0, math.pi * 2)
-        end_angle = start_angle + random.uniform(math.pi / 4, math.pi / 2)
-        start_x = x + math.cos(start_angle) * (radius * 0.7)
-        start_y = y + math.sin(start_angle) * (radius * 0.7)
-        end_x = x + math.cos(end_angle) * (radius * 0.7)
-        end_y = y + math.sin(end_angle) * (radius * 0.7)
-        pygame.draw.line(
-            screen, DARK_RED, (int(start_x), int(start_y)), (int(end_x), int(end_y)), 2
-        )
+        pygame.draw.circle(surface, color, (int(self.x), int(self.y)), self.size)
 
 
-def draw_crate(screen, x, y):
-    # Draw main crate body
-    crate_rect = pygame.Rect(
-        x - CARE_PACKAGE_SIZE // 2,
-        y - CARE_PACKAGE_SIZE // 2,
-        CARE_PACKAGE_SIZE,
-        CARE_PACKAGE_SIZE,
-    )
-    pygame.draw.rect(screen, GREEN, crate_rect)
-    pygame.draw.rect(screen, (0, 100, 0), crate_rect, 2)  # Darker green border
+class StarField:
+    def __init__(self):
+        self.layers = []
+        layer_configs = [
+            {"count": 80, "speed": 0.2, "size": 1, "twinkle": False},
+            {"count": 60, "speed": 0.5, "size": 1, "twinkle": True},
+            {"count": 40, "speed": 0.8, "size": 2, "twinkle": False},
+            {"count": 25, "speed": 1.2, "size": 2, "twinkle": True},
+            {"count": 15, "speed": 1.8, "size": 3, "twinkle": True},
+        ]
+        
+        for config in layer_configs:
+            layer = [ParallaxStar(config["speed"], config["size"], config["twinkle"]) 
+                     for _ in range(config["count"])]
+            self.layers.append(layer)
+        
+        self.nebula_spots = []
+        for _ in range(8):
+            self.nebula_spots.append({
+                "x": random.randint(0, CFG.WIDTH),
+                "y": random.randint(0, CFG.HEIGHT),
+                "size": random.randint(50, 120),
+                "color": random.choice([
+                    (30, 20, 60),
+                    (20, 30, 50),
+                    (40, 20, 30),
+                    (20, 40, 40),
+                ]),
+                "speed": random.uniform(0.1, 0.3)
+            })
+    
+    def update(self, dt=1):
+        for layer in self.layers:
+            for star in layer:
+                star.update(dt)
+        
+        for spot in self.nebula_spots:
+            spot["y"] += spot["speed"] * dt
+            if spot["y"] > CFG.HEIGHT + spot["size"]:
+                spot["y"] = -spot["size"]
+                spot["x"] = random.randint(0, CFG.WIDTH)
+    
+    def draw(self, surface, time_offset=0):
+        for spot in self.nebula_spots:
+            nebula_surf = pygame.Surface((spot["size"] * 2, spot["size"] * 2), pygame.SRCALPHA)
+            for i in range(spot["size"], 0, -5):
+                alpha = int(20 * (i / spot["size"]))
+                color_with_alpha = (*spot["color"], alpha)
+                pygame.draw.circle(nebula_surf, color_with_alpha, 
+                                 (spot["size"], spot["size"]), i)
+            surface.blit(nebula_surf, (int(spot["x"] - spot["size"]), int(spot["y"] - spot["size"])))
+        
+        for layer in self.layers:
+            for star in layer:
+                star.draw(surface, time_offset)
 
-    # Draw ammo symbol
-    font = pygame.font.Font(None, 24)
-    ammo_text = font.render("+5", True, WHITE)
-    text_rect = ammo_text.get_rect(center=(x, y))
-    screen.blit(ammo_text, text_rect)
 
-    # Draw cross lines for crate texture
-    pygame.draw.line(
-        screen,
-        (0, 100, 0),
-        (x - CARE_PACKAGE_SIZE // 2, y - CARE_PACKAGE_SIZE // 2),
-        (x + CARE_PACKAGE_SIZE // 2, y + CARE_PACKAGE_SIZE // 2),
-        2,
-    )
-    pygame.draw.line(
-        screen,
-        (0, 100, 0),
-        (x - CARE_PACKAGE_SIZE // 2, y + CARE_PACKAGE_SIZE // 2),
-        (x + CARE_PACKAGE_SIZE // 2, y - CARE_PACKAGE_SIZE // 2),
-        2,
-    )
+# ============================================================================
+# GAME OBJECTS
+# ============================================================================
+class Bullet:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.active = False
+        self.radius = CFG.BULLET_RADIUS
+    
+    def reset(self, x=0, y=0):
+        self.x = x
+        self.y = y
+        self.active = True
+    
+    def update(self):
+        self.y -= CFG.BULLET_SPEED
+        if self.y < -10:
+            self.active = False
+    
+    def draw(self, surface):
+        if self.active:
+            pygame.draw.circle(surface, WHITE, (int(self.x), int(self.y)), self.radius)
+            glow_surf = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (100, 150, 255, 80), (10, 10), 8)
+            surface.blit(glow_surf, (int(self.x) - 10, int(self.y) - 10))
 
 
-def draw_heart(screen, x, y):
-    # Calculate heart dimensions
-    size = HEALTH_PACK_SIZE * 3  # Make heart slightly larger than original health pack
+class Asteroid:
+    """Standard asteroid with various movement patterns"""
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.active = False
+        self.radius = CFG.ASTEROID_RADIUS
+        self.rotation = 0
+        self.spin = 0
+        self.speed = 3
+        self.points = []
+        self.pattern = 'straight'
+        self.wave_offset = 0
+        self.original_x = 0
+        self.asteroid_type = 'normal'
+        self.score_value = CFG.SCORE_ASTEROID_DESTROY
+    
+    def reset(self, x=0, speed=3, pattern='straight', asteroid_type='normal'):
+        self.x = x
+        self.original_x = x
+        self.y = -self.radius
+        self.active = True
+        self.rotation = random.uniform(0, 360)
+        self.spin = random.uniform(-3, 3)
+        self.speed = speed
+        self.pattern = pattern
+        self.wave_offset = random.uniform(0, 2 * math.pi)
+        self.asteroid_type = asteroid_type
+        
+        # Set score based on type
+        if asteroid_type == 'fast':
+            self.score_value = CFG.SCORE_FAST_DESTROY
+            self.radius = 15
+        elif asteroid_type == 'homing':
+            self.score_value = CFG.SCORE_HOMING_DESTROY
+            self.radius = 25
+        elif asteroid_type == 'splitting':
+            self.score_value = CFG.SCORE_SPLITTING_DESTROY
+            self.radius = 30
+        else:
+            self.score_value = CFG.SCORE_ASTEROID_DESTROY
+            self.radius = CFG.ASTEROID_RADIUS
+        
+        # Generate irregular shape
+        self.points = []
+        num_points = 8
+        for i in range(num_points):
+            angle = (i / num_points) * 2 * math.pi
+            variation = random.uniform(0.7, 1.3)
+            self.points.append((angle, self.radius * variation))
+    
+    def update(self, frame, player_x=None, player_y=None):
+        self.y += self.speed
+        self.rotation += self.spin
+        
+        if self.pattern == 'zigzag':
+            self.x = self.original_x + math.sin(self.y * 0.05 + self.wave_offset) * 50
+        elif self.pattern == 'sine':
+            self.x = self.original_x + math.sin(self.y * 0.02 + self.wave_offset) * 100
+        elif self.pattern == 'homing' and player_x is not None:
+            # Slowly track toward player
+            dx = player_x - self.x
+            self.x += clamp(dx * 0.02, -2, 2)
+        
+        # Keep in bounds
+        self.x = clamp(self.x, self.radius, CFG.WIDTH - self.radius)
+        
+        if self.y > CFG.HEIGHT + self.radius:
+            self.active = False
+    
+    def draw(self, surface):
+        if not self.active:
+            return
+        
+        # Choose color based on type
+        if self.asteroid_type == 'fast':
+            fill_color = ORANGE
+            outline_color = YELLOW
+        elif self.asteroid_type == 'homing':
+            fill_color = PURPLE
+            outline_color = MAGENTA
+        elif self.asteroid_type == 'splitting':
+            fill_color = (150, 100, 50)
+            outline_color = (100, 70, 30)
+        else:
+            fill_color = RED
+            outline_color = DARK_RED
+        
+        # Draw irregular asteroid shape
+        points = []
+        for angle, radius in self.points:
+            rot_angle = angle + math.radians(self.rotation)
+            px = self.x + math.cos(rot_angle) * radius
+            py = self.y + math.sin(rot_angle) * radius
+            points.append((int(px), int(py)))
+        
+        pygame.draw.polygon(surface, fill_color, points)
+        pygame.draw.polygon(surface, outline_color, points, 3)
+        
+        # Draw indicator for special types
+        if self.asteroid_type == 'homing':
+            # Draw targeting reticle
+            pygame.draw.circle(surface, MAGENTA, (int(self.x), int(self.y)), int(self.radius * 0.3), 1)
+        elif self.asteroid_type == 'splitting':
+            # Draw crack lines
+            pygame.draw.line(surface, outline_color, 
+                           (int(self.x - self.radius * 0.5), int(self.y)),
+                           (int(self.x + self.radius * 0.5), int(self.y)), 2)
 
-    # Create the heart shape using circles and a triangle
-    left_center = (x - size // 4, y)
-    right_center = (x + size // 4, y)
-    radius = size // 4
 
-    # Draw the two circles for the top of the heart
-    pygame.draw.circle(screen, BLUE, left_center, radius)
-    pygame.draw.circle(screen, BLUE, right_center, radius)
+class MiniAsteroid:
+    """Small asteroid created when splitting asteroids are destroyed"""
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.vx = 0
+        self.vy = 0
+        self.active = False
+        self.radius = 10
+        self.rotation = 0
+        self.spin = 0
+        self.score_value = 5
+    
+    def reset(self, x, y, angle):
+        self.x = x
+        self.y = y
+        self.vx = math.cos(angle) * 2
+        self.vy = math.sin(angle) * 2 + 2
+        self.active = True
+        self.rotation = random.uniform(0, 360)
+        self.spin = random.uniform(-5, 5)
+    
+    def update(self, frame):
+        self.x += self.vx
+        self.y += self.vy
+        self.rotation += self.spin
+        
+        if self.y > CFG.HEIGHT + self.radius or self.x < -self.radius or self.x > CFG.WIDTH + self.radius:
+            self.active = False
+    
+    def draw(self, surface):
+        if not self.active:
+            return
+        
+        pygame.draw.circle(surface, (150, 100, 50), (int(self.x), int(self.y)), self.radius)
+        pygame.draw.circle(surface, (100, 70, 30), (int(self.x), int(self.y)), self.radius, 2)
 
-    # Draw the triangle for the bottom of the heart
-    points = [(x - size // 2, y), (x + size // 2, y), (x, y + size // 2)]
-    pygame.draw.polygon(screen, BLUE, points)
 
-    # Add a health symbol
-    font = pygame.font.Font(None, 20)
-    health_text = font.render("+10", True, WHITE)
-    text_rect = health_text.get_rect(center=(x, y))
-    screen.blit(health_text, text_rect)
+class CarePackage:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.active = False
+        self.size = 30
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+    
+    def reset(self, x=0):
+        self.x = x
+        self.y = -self.size
+        self.active = True
+    
+    def update(self, frame):
+        self.y += 2
+        if self.y > CFG.HEIGHT + self.size:
+            self.active = False
+    
+    def draw(self, surface, frame):
+        if not self.active:
+            return
+        
+        bob = math.sin(frame * 0.1 + self.bob_offset) * 3
+        y = self.y + bob
+        
+        rect = pygame.Rect(self.x - self.size//2, y - self.size//2, self.size, self.size)
+        pygame.draw.rect(surface, GREEN, rect)
+        pygame.draw.rect(surface, (0, 150, 0), rect, 2)
+        
+        pygame.draw.line(surface, (0, 150, 0), (self.x - self.size//2, y - self.size//2),
+                        (self.x + self.size//2, y + self.size//2), 2)
+        pygame.draw.line(surface, (0, 150, 0), (self.x - self.size//2, y + self.size//2),
+                        (self.x + self.size//2, y - self.size//2), 2)
+        
+        text = Fonts.small.render("+5", True, WHITE)
+        surface.blit(text, (self.x - text.get_width()//2, y - text.get_height()//2))
+
+
+class HealthPack:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.active = False
+        self.size = 15
+        self.pulse = 0
+    
+    def reset(self, x=0):
+        self.x = x
+        self.y = -self.size * 2
+        self.active = True
+        self.pulse = 0
+    
+    def update(self, frame):
+        self.y += 2.5
+        self.pulse = frame
+        if self.y > CFG.HEIGHT + self.size:
+            self.active = False
+    
+    def draw(self, surface, frame):
+        if not self.active:
+            return
+        
+        left_center = (int(self.x - self.size // 4), int(self.y))
+        right_center = (int(self.x + self.size // 4), int(self.y))
+        radius = int(self.size // 4)
+        
+        pygame.draw.circle(surface, BLUE, left_center, radius)
+        pygame.draw.circle(surface, BLUE, right_center, radius)
+        
+        points = [
+            (self.x - self.size // 2, self.y),
+            (self.x + self.size // 2, self.y),
+            (self.x, self.y + self.size // 2)
+        ]
+        pygame.draw.polygon(surface, BLUE, [(int(p[0]), int(p[1])) for p in points])
+        
+        text = Fonts.small.render("+10", True, WHITE)
+        surface.blit(text, (self.x - text.get_width()//2, self.y - text.get_height()//2))
+
+
+class PowerUp:
+    """Power-up pickups (shield, rapid fire, bomb)"""
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.active = False
+        self.size = 25
+        self.power_type = 'shield'
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+    
+    def reset(self, x=0, power_type='shield'):
+        self.x = x
+        self.y = -self.size
+        self.active = True
+        self.power_type = power_type
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+    
+    def update(self, frame):
+        self.y += 1.5
+        if self.y > CFG.HEIGHT + self.size:
+            self.active = False
+    
+    def draw(self, surface, frame):
+        if not self.active:
+            return
+        
+        bob = math.sin(frame * 0.15 + self.bob_offset) * 4
+        y = self.y + bob
+        
+        # Draw based on power type
+        if self.power_type == 'shield':
+            # Cyan shield icon
+            pygame.draw.circle(surface, CYAN, (int(self.x), int(y)), self.size // 2)
+            pygame.draw.circle(surface, WHITE, (int(self.x), int(y)), self.size // 2, 2)
+            # Shield symbol
+            points = [(self.x, y - 8), (self.x - 6, y - 2), 
+                     (self.x - 6, y + 4), (self.x, y + 8),
+                     (self.x + 6, y + 4), (self.x + 6, y - 2)]
+            pygame.draw.polygon(surface, WHITE, [(int(p[0]), int(p[1])) for p in points], 2)
+        
+        elif self.power_type == 'rapid_fire':
+            # Orange rapid fire icon
+            pygame.draw.circle(surface, ORANGE, (int(self.x), int(y)), self.size // 2)
+            pygame.draw.circle(surface, WHITE, (int(self.x), int(y)), self.size // 2, 2)
+            # Bullet symbols
+            for offset in [-5, 0, 5]:
+                pygame.draw.line(surface, WHITE, (int(self.x + offset), int(y + 8)),
+                               (int(self.x + offset), int(y - 8)), 2)
+        
+        elif self.power_type == 'bomb':
+            # Red bomb icon
+            pygame.draw.circle(surface, RED, (int(self.x), int(y)), self.size // 2)
+            pygame.draw.circle(surface, WHITE, (int(self.x), int(y)), self.size // 2, 2)
+            # Bomb symbol
+            pygame.draw.circle(surface, BLACK, (int(self.x), int(y)), self.size // 4)
+            pygame.draw.line(surface, ORANGE, (int(self.x), int(y - self.size // 4)),
+                           (int(self.x), int(y - self.size // 2)), 3)
+
+
+class FloatingText:
+    def __init__(self, text, x, y, color=WHITE):
+        self.text = text
+        self.x = x
+        self.y = y
+        self.color = color
+        self.lifetime = 40
+        self.max_lifetime = 40
+    
+    @property
+    def active(self):
+        return self.lifetime > 0
+    
+    def update(self):
+        self.y -= 1.5
+        self.lifetime -= 1
+    
+    def draw(self, surface):
+        if self.lifetime <= 0:
+            return
+        
+        alpha = int(255 * (self.lifetime / self.max_lifetime))
+        text_surf = Fonts.medium.render(self.text, True, self.color)
+        
+        alpha_surf = pygame.Surface(text_surf.get_size(), pygame.SRCALPHA)
+        alpha_surf.fill((255, 255, 255, alpha))
+        text_surf.blit(alpha_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        
+        surface.blit(text_surf, (self.x - text_surf.get_width()//2, int(self.y)))
+
+
+# ============================================================================
+# PLAYER
+# ============================================================================
+class Player:
+    def __init__(self):
+        self.width = CFG.PLAYER_WIDTH
+        self.height = CFG.PLAYER_HEIGHT
+        self.reset()
+    
+    def reset(self):
+        self.x = CFG.WIDTH // 2 - self.width // 2
+        self.y = CFG.HEIGHT - self.height - 10
+        self.velocity = 0
+        self.health = CFG.PLAYER_INITIAL_HEALTH
+        self.ammo = CFG.PLAYER_INITIAL_AMMO
+        self.invulnerable = 0
+        self.knockback_timer = 0
+        
+        # Power-up states
+        self.shield_timer = 0
+        self.rapid_fire_timer = 0
+        self.rapid_fire_cooldown = 0
+    
+    def update(self, keys, friction=0.98):
+        if self.knockback_timer > 0:
+            self.knockback_timer -= 1
+        else:
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                self.velocity -= CFG.PLAYER_ACCELERATION
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                self.velocity += CFG.PLAYER_ACCELERATION
+        
+        self.velocity *= friction
+        self.velocity = clamp(self.velocity, -CFG.PLAYER_MAX_SPEED, CFG.PLAYER_MAX_SPEED)
+        self.x += self.velocity
+        self.x = clamp(self.x, 0, CFG.WIDTH - self.width)
+        
+        if self.invulnerable > 0:
+            self.invulnerable -= 1
+        
+        # Update power-up timers
+        if self.shield_timer > 0:
+            self.shield_timer -= 1
+        if self.rapid_fire_timer > 0:
+            self.rapid_fire_timer -= 1
+        if self.rapid_fire_cooldown > 0:
+            self.rapid_fire_cooldown -= 1
+    
+    @property
+    def has_shield(self):
+        return self.shield_timer > 0
+    
+    @property
+    def has_rapid_fire(self):
+        return self.rapid_fire_timer > 0
+    
+    @property
+    def center_x(self):
+        return self.x + self.width // 2
+    
+    @property
+    def center_y(self):
+        return self.y + self.height // 2
+    
+    def draw(self, surface, frame, particles=None):
+        # Flash when invulnerable (but not with shield)
+        if self.invulnerable > 0 and not self.has_shield and frame % 6 < 3:
+            return
+        
+        x, y = int(self.x), int(self.y)
+        
+        # Draw shield effect
+        if self.has_shield:
+            shield_alpha = 100 + int(math.sin(frame * 0.2) * 50)
+            shield_surf = pygame.Surface((self.width + 30, self.height + 30), pygame.SRCALPHA)
+            pygame.draw.circle(shield_surf, (*CYAN, shield_alpha), 
+                             (self.width // 2 + 15, self.height // 2 + 15), 
+                             max(self.width, self.height) // 2 + 10)
+            surface.blit(shield_surf, (x - 15, y - 15))
+            
+            # Sparkle particles
+            if particles and frame % 5 == 0:
+                particles.create_shield_sparkle(
+                    self.center_x, self.center_y, 
+                    max(self.width, self.height) // 2 + 10
+                )
+        
+        # Spaceship body
+        ship_points = [
+            (x + self.width // 2, y),
+            (x, y + self.height),
+            (x + self.width // 2, y + self.height - 10),
+            (x + self.width, y + self.height),
+        ]
+        
+        # Color based on power-ups
+        ship_color = WHITE
+        if self.has_rapid_fire:
+            ship_color = ORANGE if frame % 10 < 5 else WHITE
+        
+        pygame.draw.polygon(surface, ship_color, ship_points)
+        
+        # Engine flames (animated)
+        flame_offset = math.sin(frame * 0.5) * 3
+        flame_size = 1.5 if self.has_rapid_fire else 1.0
+        flame_points = [
+            (x + self.width // 2 - int(10 * flame_size), y + self.height),
+            (x + self.width // 2, y + self.height + int((10 + flame_offset) * flame_size)),
+            (x + self.width // 2 + int(10 * flame_size), y + self.height),
+        ]
+        pygame.draw.polygon(surface, ORANGE, flame_points)
+        
+        inner_flame_points = [
+            (x + self.width // 2 - int(5 * flame_size), y + self.height),
+            (x + self.width // 2, y + self.height + int((6 + flame_offset) * flame_size)),
+            (x + self.width // 2 + int(5 * flame_size), y + self.height),
+        ]
+        pygame.draw.polygon(surface, YELLOW, inner_flame_points)
+        
+        # Cockpit
+        cockpit_rect = pygame.Rect(x + self.width // 4, y + 10, self.width // 2, 8)
+        pygame.draw.ellipse(surface, BLUE, cockpit_rect)
+    
+    def apply_knockback(self, direction, force=15):
+        self.velocity = force * direction
+        self.knockback_timer = CFG.PLAYER_KNOCKBACK_FRAMES
+        self.invulnerable = CFG.PLAYER_INVULNERABLE_FRAMES
+
+
+# ============================================================================
+# MAIN GAME
+# ============================================================================
+class Game:
+    def __init__(self):
+        self.clock = pygame.time.Clock()
+        self.state = "menu"  # menu, playing, paused, game_over
+        
+        # Screen shake
+        self.shake = ScreenShake()
+        
+        # Spatial grid for collision detection
+        self.spatial_grid = SpatialGrid(cell_size=64)
+        
+        # Game objects
+        self.player = Player()
+        self.particles = ParticleSystem()
+        self.star_field = StarField()
+        
+        # Object pools
+        self.bullet_pool = ObjectPool(Bullet, 50)
+        self.asteroid_pool = ObjectPool(Asteroid, 30)
+        self.mini_asteroid_pool = ObjectPool(MiniAsteroid, 20)
+        self.care_package_pool = ObjectPool(CarePackage, 10)
+        self.health_pack_pool = ObjectPool(HealthPack, 10)
+        self.power_up_pool = ObjectPool(PowerUp, 10)
+        
+        self.floating_texts = []
+        
+        # Game state
+        self.score = 0
+        self.level = 1
+        self.level_timer = 0
+        self.frame = 0
+        self.time_offset = 0
+        
+        # Level settings
+        self.target_speed = CFG.ASTEROID_BASE_SPEED
+        self.spawn_rate = CFG.ASTEROID_BASE_SPAWN_RATE
+        
+        # Name input
+        self.player_name = ""
+        self.entering_name = False
+        self.name_submitted = False
+        
+        # Leaderboard
+        self.leaderboard = []
+        
+        # Pause menu selection
+        self.pause_selection = 0
+    
+    def reset_game(self):
+        self.player.reset()
+        self.particles.clear()
+        self.bullet_pool.release_all()
+        self.asteroid_pool.release_all()
+        self.mini_asteroid_pool.release_all()
+        self.care_package_pool.release_all()
+        self.health_pack_pool.release_all()
+        self.power_up_pool.release_all()
+        self.floating_texts.clear()
+        
+        self.score = 0
+        self.level = 1
+        self.level_timer = time.time()
+        self.frame = 0
+        self.target_speed = CFG.ASTEROID_BASE_SPEED
+        self.spawn_rate = CFG.ASTEROID_BASE_SPAWN_RATE
+        
+        self.player_name = ""
+        self.entering_name = False
+        self.name_submitted = False
+        self.pause_selection = 0
+    
+    def spawn_asteroid(self):
+        asteroid = self.asteroid_pool.acquire()
+        if asteroid:
+            x = random.randint(20, CFG.WIDTH - 20)
+            
+            # Choose type based on level
+            type_choices = ['normal', 'normal', 'normal']
+            if self.level >= 2:
+                type_choices.extend(['fast', 'fast'])
+            if self.level >= 3:
+                type_choices.append('homing')
+            if self.level >= 4:
+                type_choices.append('splitting')
+            
+            asteroid_type = random.choice(type_choices)
+            
+            # Choose pattern
+            if asteroid_type == 'fast':
+                pattern = 'straight'
+                speed = self.target_speed * 1.8
+            elif asteroid_type == 'homing':
+                pattern = 'homing'
+                speed = self.target_speed * 0.7
+            else:
+                pattern = random.choices(
+                    ['straight', 'zigzag', 'sine'],
+                    weights=[0.6, 0.25, 0.15]
+                )[0]
+                speed = self.target_speed
+            
+            asteroid.reset(x, speed, pattern, asteroid_type)
+    
+    def spawn_mini_asteroids(self, x, y):
+        """Spawn mini asteroids when a splitting asteroid is destroyed"""
+        for i in range(3):
+            mini = self.mini_asteroid_pool.acquire()
+            if mini:
+                angle = (i / 3) * 2 * math.pi + random.uniform(-0.3, 0.3)
+                mini.reset(x, y, angle)
+    
+    def spawn_care_package(self):
+        package = self.care_package_pool.acquire()
+        if package:
+            package.reset(random.randint(30, CFG.WIDTH - 30))
+    
+    def spawn_health_pack(self):
+        pack = self.health_pack_pool.acquire()
+        if pack:
+            pack.reset(random.randint(30, CFG.WIDTH - 30))
+    
+    def spawn_power_up(self):
+        power_up = self.power_up_pool.acquire()
+        if power_up:
+            power_type = random.choice(['shield', 'rapid_fire', 'bomb'])
+            power_up.reset(random.randint(30, CFG.WIDTH - 30), power_type)
+    
+    def shoot(self):
+        # Check rapid fire
+        if self.player.has_rapid_fire:
+            if self.player.rapid_fire_cooldown > 0:
+                return
+            self.player.rapid_fire_cooldown = CFG.RAPID_FIRE_COOLDOWN
+        
+        if self.player.ammo > 0:
+            bullet = self.bullet_pool.acquire()
+            if bullet:
+                bullet.reset(self.player.center_x, self.player.y)
+                self.player.ammo -= 1
+    
+    def trigger_bomb(self):
+        """Destroy all asteroids on screen"""
+        self.particles.create_bomb_wave(self.player.center_x, self.player.center_y)
+        self.shake.trigger(20, 20)
+        
+        # Destroy all asteroids
+        for asteroid in self.asteroid_pool.active[:]:
+            if asteroid.active:
+                self.particles.create_explosion(asteroid.x, asteroid.y, ORANGE, 15)
+                self.score += asteroid.score_value // 2  # Half points for bomb kills
+                asteroid.active = False
+                self.asteroid_pool.release(asteroid)
+        
+        for mini in self.mini_asteroid_pool.active[:]:
+            if mini.active:
+                self.particles.create_explosion(mini.x, mini.y, ORANGE, 8)
+                mini.active = False
+                self.mini_asteroid_pool.release(mini)
+        
+        self.add_floating_text("BOMB!", CFG.WIDTH // 2, CFG.HEIGHT // 2, RED)
+    
+    def add_floating_text(self, text, x, y, color=WHITE):
+        self.floating_texts.append(FloatingText(text, x, y, color))
+    
+    def check_collisions(self):
+        player_cx = self.player.center_x
+        player_cy = self.player.center_y
+        
+        # Build spatial grid
+        self.spatial_grid.clear()
+        for asteroid in self.asteroid_pool.active:
+            if asteroid.active:
+                self.spatial_grid.insert(asteroid)
+        for mini in self.mini_asteroid_pool.active:
+            if mini.active:
+                self.spatial_grid.insert(mini)
+        
+        # Bullets vs asteroids
+        for bullet in self.bullet_pool.active[:]:
+            if not bullet.active:
+                continue
+            
+            # Check regular asteroids
+            nearby = self.spatial_grid.get_nearby(bullet.x, bullet.y)
+            for asteroid in nearby:
+                if not asteroid.active:
+                    continue
+                
+                if check_circle_collision(bullet.x, bullet.y, bullet.radius,
+                                         asteroid.x, asteroid.y, asteroid.radius):
+                    bullet.active = False
+                    asteroid.active = False
+                    self.bullet_pool.release(bullet)
+                    
+                    # Handle splitting asteroids
+                    if hasattr(asteroid, 'asteroid_type') and asteroid.asteroid_type == 'splitting':
+                        self.spawn_mini_asteroids(asteroid.x, asteroid.y)
+                        self.particles.create_explosion(asteroid.x, asteroid.y, (150, 100, 50), 20)
+                    else:
+                        self.particles.create_explosion(asteroid.x, asteroid.y, ORANGE, 25)
+                    
+                    self.score += asteroid.score_value
+                    self.shake.trigger(5, 8)
+                    
+                    # Release from appropriate pool
+                    if isinstance(asteroid, MiniAsteroid):
+                        self.mini_asteroid_pool.release(asteroid)
+                    else:
+                        self.asteroid_pool.release(asteroid)
+                    break
+        
+        # Bullets vs pickups
+        for bullet in self.bullet_pool.active[:]:
+            if not bullet.active:
+                continue
+            
+            for package in self.care_package_pool.active[:]:
+                if not package.active:
+                    continue
+                
+                if abs(bullet.x - package.x) < package.size // 2 and abs(bullet.y - package.y) < package.size // 2:
+                    bullet.active = False
+                    package.active = False
+                    self.bullet_pool.release(bullet)
+                    self.care_package_pool.release(package)
+                    self.particles.create_collect(package.x, package.y, GREEN)
+                    self.player.ammo += CFG.CARE_PACKAGE_AMMO
+                    self.add_floating_text(f"+{CFG.CARE_PACKAGE_AMMO} AMMO", package.x, package.y, GREEN)
+                    break
+            
+            for pack in self.health_pack_pool.active[:]:
+                if not pack.active:
+                    continue
+                
+                if abs(bullet.x - pack.x) < pack.size and abs(bullet.y - pack.y) < pack.size:
+                    bullet.active = False
+                    pack.active = False
+                    self.bullet_pool.release(bullet)
+                    self.health_pack_pool.release(pack)
+                    self.particles.create_collect(pack.x, pack.y, BLUE)
+                    self.player.health = min(CFG.PLAYER_INITIAL_HEALTH, self.player.health + CFG.HEALTH_PACK_HEAL)
+                    self.add_floating_text(f"+{CFG.HEALTH_PACK_HEAL} HP", pack.x, pack.y, BLUE)
+                    break
+            
+            for power_up in self.power_up_pool.active[:]:
+                if not power_up.active:
+                    continue
+                
+                if abs(bullet.x - power_up.x) < power_up.size and abs(bullet.y - power_up.y) < power_up.size:
+                    bullet.active = False
+                    power_up.active = False
+                    self.bullet_pool.release(bullet)
+                    self.collect_power_up(power_up)
+                    self.power_up_pool.release(power_up)
+                    break
+        
+        # Player vs asteroids
+        if self.player.invulnerable <= 0 and not self.player.has_shield:
+            nearby = self.spatial_grid.get_nearby(player_cx, player_cy, radius=2)
+            for asteroid in nearby:
+                if not asteroid.active:
+                    continue
+                
+                dist = distance(player_cx, player_cy, asteroid.x, asteroid.y)
+                if dist < asteroid.radius + 25:
+                    asteroid.active = False
+                    
+                    if isinstance(asteroid, MiniAsteroid):
+                        self.mini_asteroid_pool.release(asteroid)
+                    else:
+                        self.asteroid_pool.release(asteroid)
+                    
+                    self.particles.create_hit(asteroid.x, asteroid.y, RED)
+                    self.particles.create_explosion(asteroid.x, asteroid.y, RED, 15)
+                    self.player.health -= 10
+                    direction = -1 if asteroid.x > player_cx else 1
+                    self.player.apply_knockback(direction)
+                    self.shake.trigger(12, 15)
+                    
+                    if self.player.health <= 0:
+                        self.state = "game_over"
+                        self.entering_name = True
+                    break
+        
+        # Player contact with pickups
+        for package in self.care_package_pool.active[:]:
+            if not package.active:
+                continue
+            
+            if check_circle_rect_collision(package.x, package.y, package.size // 2,
+                                          self.player.x, self.player.y, 
+                                          self.player.width, self.player.height):
+                package.active = False
+                self.care_package_pool.release(package)
+                self.particles.create_collect(package.x, package.y, GREEN)
+                self.player.ammo += CFG.CARE_PACKAGE_AMMO
+                self.add_floating_text(f"+{CFG.CARE_PACKAGE_AMMO} AMMO", package.x, package.y, GREEN)
+        
+        for pack in self.health_pack_pool.active[:]:
+            if not pack.active:
+                continue
+            
+            if check_circle_rect_collision(pack.x, pack.y, pack.size,
+                                          self.player.x, self.player.y,
+                                          self.player.width, self.player.height):
+                pack.active = False
+                self.health_pack_pool.release(pack)
+                self.particles.create_collect(pack.x, pack.y, BLUE)
+                self.player.health = min(CFG.PLAYER_INITIAL_HEALTH, self.player.health + CFG.HEALTH_PACK_HEAL)
+                self.add_floating_text(f"+{CFG.HEALTH_PACK_HEAL} HP", pack.x, pack.y, BLUE)
+        
+        for power_up in self.power_up_pool.active[:]:
+            if not power_up.active:
+                continue
+            
+            if check_circle_rect_collision(power_up.x, power_up.y, power_up.size // 2,
+                                          self.player.x, self.player.y,
+                                          self.player.width, self.player.height):
+                power_up.active = False
+                self.collect_power_up(power_up)
+                self.power_up_pool.release(power_up)
+    
+    def collect_power_up(self, power_up):
+        """Handle power-up collection"""
+        if power_up.power_type == 'shield':
+            self.player.shield_timer = CFG.SHIELD_DURATION
+            self.add_floating_text("SHIELD!", power_up.x, power_up.y, CYAN)
+            self.particles.create_collect(power_up.x, power_up.y, CYAN)
+        elif power_up.power_type == 'rapid_fire':
+            self.player.rapid_fire_timer = CFG.RAPID_FIRE_DURATION
+            self.add_floating_text("RAPID FIRE!", power_up.x, power_up.y, ORANGE)
+            self.particles.create_collect(power_up.x, power_up.y, ORANGE)
+        elif power_up.power_type == 'bomb':
+            self.trigger_bomb()
+    
+    def update_playing(self):
+        keys = pygame.key.get_pressed()
+        
+        # Update player
+        friction = CFG.PLAYER_FRICTION - (self.level - 1) * 0.02
+        friction = max(0.85, friction)
+        self.player.update(keys, friction)
+        
+        # Create thrust particles
+        if self.frame % 3 == 0:
+            self.particles.create_thrust(
+                self.player.center_x,
+                self.player.y + self.player.height
+            )
+        
+        # Rapid fire auto-shoot
+        if self.player.has_rapid_fire and (keys[pygame.K_SPACE] or keys[pygame.K_UP]):
+            self.shoot()
+        
+        # Spawn objects
+        if self.frame % self.spawn_rate == 0:
+            self.spawn_asteroid()
+        if self.frame % CFG.CARE_PACKAGE_SPAWN_RATE == 0:
+            self.spawn_care_package()
+        if self.frame % CFG.HEALTH_PACK_SPAWN_RATE == 0:
+            self.spawn_health_pack()
+        if self.frame % 600 == 0 and self.level >= 2:  # Power-ups after level 2
+            self.spawn_power_up()
+        
+        # Update objects
+        for bullet in self.bullet_pool.active:
+            bullet.update()
+            if bullet.active and self.frame % 2 == 0:
+                self.particles.create_bullet_trail(bullet.x, bullet.y)
+        
+        for asteroid in self.asteroid_pool.active:
+            asteroid.update(self.frame, self.player.center_x, self.player.center_y)
+        
+        for mini in self.mini_asteroid_pool.active:
+            mini.update(self.frame)
+        
+        for package in self.care_package_pool.active:
+            package.update(self.frame)
+        
+        for pack in self.health_pack_pool.active:
+            pack.update(self.frame)
+        
+        for power_up in self.power_up_pool.active:
+            power_up.update(self.frame)
+        
+        # Clean up inactive objects
+        for bullet in self.bullet_pool.active[:]:
+            if not bullet.active:
+                self.bullet_pool.release(bullet)
+        
+        for asteroid in self.asteroid_pool.active[:]:
+            if not asteroid.active:
+                self.asteroid_pool.release(asteroid)
+        
+        for mini in self.mini_asteroid_pool.active[:]:
+            if not mini.active:
+                self.mini_asteroid_pool.release(mini)
+        
+        for package in self.care_package_pool.active[:]:
+            if not package.active:
+                self.care_package_pool.release(package)
+        
+        for pack in self.health_pack_pool.active[:]:
+            if not pack.active:
+                self.health_pack_pool.release(pack)
+        
+        for power_up in self.power_up_pool.active[:]:
+            if not power_up.active:
+                self.power_up_pool.release(power_up)
+        
+        # Update floating texts
+        for text in self.floating_texts[:]:
+            text.update()
+            if not text.active:
+                self.floating_texts.remove(text)
+        
+        # Check collisions
+        self.check_collisions()
+        
+        # Level progression
+        if time.time() - self.level_timer >= CFG.LEVEL_DURATION:
+            self.level += 1
+            self.level_timer = time.time()
+            self.target_speed = CFG.ASTEROID_BASE_SPEED * (CFG.LEVEL_SPEED_MULTIPLIER ** (self.level - 1))
+            self.spawn_rate = max(CFG.ASTEROID_MIN_SPAWN_RATE, CFG.ASTEROID_BASE_SPAWN_RATE - self.level * 5)
+            self.add_floating_text(f"LEVEL {self.level}!", CFG.WIDTH // 2, CFG.HEIGHT // 2, YELLOW)
+            self.shake.trigger(8, 15)
+    
+    def draw_playing(self, surface):
+        # Draw game objects
+        for bullet in self.bullet_pool.active:
+            bullet.draw(surface)
+        
+        for asteroid in self.asteroid_pool.active:
+            asteroid.draw(surface)
+        
+        for mini in self.mini_asteroid_pool.active:
+            mini.draw(surface)
+        
+        for package in self.care_package_pool.active:
+            package.draw(surface, self.frame)
+        
+        for pack in self.health_pack_pool.active:
+            pack.draw(surface, self.frame)
+        
+        for power_up in self.power_up_pool.active:
+            power_up.draw(surface, self.frame)
+        
+        self.player.draw(surface, self.frame, self.particles)
+        self.particles.draw(surface)
+        
+        for text in self.floating_texts:
+            text.draw(surface)
+        
+        # HUD
+        self.draw_hud(surface)
+    
+    def draw_hud(self, surface):
+        # Score
+        score_text = Fonts.medium.render(f"Score: {self.score}", True, WHITE)
+        surface.blit(score_text, (10, 10))
+        
+        # Health bar
+        health_text = Fonts.medium.render("Health:", True, WHITE)
+        surface.blit(health_text, (10, 50))
+        
+        bar_x = 100
+        bar_width = 150
+        bar_height = 20
+        pygame.draw.rect(surface, (50, 50, 50), (bar_x, 52, bar_width, bar_height))
+        health_width = int(bar_width * (self.player.health / CFG.PLAYER_INITIAL_HEALTH))
+        health_color = GREEN if self.player.health > 50 else YELLOW if self.player.health > 25 else RED
+        pygame.draw.rect(surface, health_color, (bar_x, 52, health_width, bar_height))
+        pygame.draw.rect(surface, WHITE, (bar_x, 52, bar_width, bar_height), 2)
+        
+        # Ammo
+        ammo_color = WHITE if self.player.ammo > 5 else YELLOW if self.player.ammo > 0 else RED
+        ammo_text = Fonts.medium.render(f"Ammo: {self.player.ammo}", True, ammo_color)
+        surface.blit(ammo_text, (10, 90))
+        
+        # Level and timer
+        level_text = Fonts.medium.render(f"Level: {self.level}", True, WHITE)
+        surface.blit(level_text, (CFG.WIDTH - level_text.get_width() - 10, 10))
+        
+        time_left = max(0, CFG.LEVEL_DURATION - (time.time() - self.level_timer))
+        timer_text = Fonts.medium.render(f"Next: {int(time_left)}s", True, WHITE)
+        surface.blit(timer_text, (CFG.WIDTH - timer_text.get_width() - 10, 50))
+        
+        # Power-up indicators
+        indicator_y = 130
+        if self.player.has_shield:
+            shield_time = self.player.shield_timer // 60
+            shield_text = Fonts.small.render(f"SHIELD: {shield_time}s", True, CYAN)
+            surface.blit(shield_text, (10, indicator_y))
+            indicator_y += 25
+        
+        if self.player.has_rapid_fire:
+            rapid_time = self.player.rapid_fire_timer // 60
+            rapid_text = Fonts.small.render(f"RAPID FIRE: {rapid_time}s", True, ORANGE)
+            surface.blit(rapid_text, (10, indicator_y))
+        
+        # Controls hint
+        controls_text = Fonts.small.render("ESC: Pause", True, (150, 150, 150))
+        surface.blit(controls_text, (CFG.WIDTH - controls_text.get_width() - 10, CFG.HEIGHT - 30))
+    
+    def draw_menu(self, surface):
+        # Title
+        title = Fonts.title.render("Adventures in Space", True, YELLOW)
+        surface.blit(title, (CFG.WIDTH // 2 - title.get_width() // 2, 80))
+        
+        # Story
+        story_lines = [
+            "In the year 2157, as an elite Space Defense pilot,",
+            "you patrol the dangerous Asteroid Belt.",
+            "These aren't normal asteroids - they're moving with purpose,",
+            "threatening Earth's outposts. Defend our territory!"
+        ]
+        y = 180
+        for line in story_lines:
+            text = Fonts.small.render(line, True, WHITE)
+            surface.blit(text, (CFG.WIDTH // 2 - text.get_width() // 2, y))
+            y += 30
+        
+        # Instructions
+        instructions = [
+            "← → or A D to move",
+            "SPACE or ↑ to shoot",
+            "",
+            "Green boxes: +5 Ammo    Blue hearts: +10 Health",
+            "Power-ups unlock at Level 2!"
+        ]
+        y = 350
+        for line in instructions:
+            text = Fonts.small.render(line, True, BLUE)
+            surface.blit(text, (CFG.WIDTH // 2 - text.get_width() // 2, y))
+            y += 28
+        
+        # Start button
+        button_rect = pygame.Rect(CFG.WIDTH // 2 - 100, CFG.HEIGHT - 120, 200, 50)
+        mouse_pos = pygame.mouse.get_pos()
+        hover = button_rect.collidepoint(mouse_pos)
+        
+        color = (0, 150, 255) if hover else BLUE
+        pygame.draw.rect(surface, color, button_rect)
+        pygame.draw.rect(surface, WHITE, button_rect, 2)
+        
+        start_text = Fonts.medium.render("START MISSION", True, WHITE)
+        surface.blit(start_text, (button_rect.centerx - start_text.get_width() // 2,
+                                  button_rect.centery - start_text.get_height() // 2))
+        
+        return button_rect
+    
+    def draw_pause(self, surface):
+        # Semi-transparent overlay
+        overlay = pygame.Surface((CFG.WIDTH, CFG.HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+        
+        title = Fonts.title.render("PAUSED", True, WHITE)
+        surface.blit(title, (CFG.WIDTH // 2 - title.get_width() // 2, 150))
+        
+        options = ["Resume", "Restart", "Quit to Menu"]
+        button_rects = []
+        
+        for i, option in enumerate(options):
+            y = 280 + i * 70
+            button_rect = pygame.Rect(CFG.WIDTH // 2 - 100, y, 200, 50)
+            button_rects.append(button_rect)
+            
+            mouse_pos = pygame.mouse.get_pos()
+            hover = button_rect.collidepoint(mouse_pos) or self.pause_selection == i
+            
+            color = (0, 150, 255) if hover else BLUE
+            pygame.draw.rect(surface, color, button_rect)
+            pygame.draw.rect(surface, WHITE, button_rect, 2)
+            
+            text = Fonts.medium.render(option, True, WHITE)
+            surface.blit(text, (button_rect.centerx - text.get_width() // 2,
+                               button_rect.centery - text.get_height() // 2))
+        
+        # Controls hint
+        hint = Fonts.small.render("↑↓ to select, ENTER to confirm, ESC to resume", True, (150, 150, 150))
+        surface.blit(hint, (CFG.WIDTH // 2 - hint.get_width() // 2, CFG.HEIGHT - 50))
+        
+        return button_rects
+    
+    def draw_game_over(self, surface):
+        # Semi-transparent overlay
+        overlay = pygame.Surface((CFG.WIDTH, CFG.HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+        
+        title = Fonts.title.render("GAME OVER", True, RED)
+        surface.blit(title, (CFG.WIDTH // 2 - title.get_width() // 2, 100))
+        
+        score_text = Fonts.large.render(f"Final Score: {self.score}", True, WHITE)
+        surface.blit(score_text, (CFG.WIDTH // 2 - score_text.get_width() // 2, 180))
+        
+        level_text = Fonts.medium.render(f"Level Reached: {self.level}", True, WHITE)
+        surface.blit(level_text, (CFG.WIDTH // 2 - level_text.get_width() // 2, 230))
+        
+        if self.entering_name:
+            prompt = Fonts.medium.render("Enter your name:", True, WHITE)
+            surface.blit(prompt, (CFG.WIDTH // 2 - prompt.get_width() // 2, 300))
+            
+            input_rect = pygame.Rect(CFG.WIDTH // 2 - 100, 340, 200, 40)
+            pygame.draw.rect(surface, WHITE, input_rect, 2)
+            
+            name_text = Fonts.medium.render(self.player_name + "▋", True, WHITE)
+            surface.blit(name_text, (input_rect.centerx - name_text.get_width() // 2,
+                                    input_rect.centery - name_text.get_height() // 2))
+            
+            submit = Fonts.small.render("Press ENTER to submit", True, YELLOW)
+            surface.blit(submit, (CFG.WIDTH // 2 - submit.get_width() // 2, 400))
+        
+        elif self.name_submitted:
+            lb_title = Fonts.medium.render("HIGH SCORES", True, YELLOW)
+            surface.blit(lb_title, (CFG.WIDTH // 2 - lb_title.get_width() // 2, 300))
+            
+            y = 350
+            for i, entry in enumerate(self.leaderboard[:5]):
+                color = GOLD if entry.get('player_name') == self.player_name and entry.get('score') == self.score else WHITE
+                entry_text = Fonts.small.render(
+                    f"{i+1}. {entry.get('player_name', 'Unknown')}: {entry.get('score', 0)} (Level {entry.get('level', 1)})",
+                    True, color
+                )
+                surface.blit(entry_text, (CFG.WIDTH // 2 - entry_text.get_width() // 2, y))
+                y += 30
+            
+            button_rect = pygame.Rect(CFG.WIDTH // 2 - 100, CFG.HEIGHT - 100, 200, 50)
+            mouse_pos = pygame.mouse.get_pos()
+            hover = button_rect.collidepoint(mouse_pos)
+            
+            color = (0, 150, 255) if hover else BLUE
+            pygame.draw.rect(surface, color, button_rect)
+            pygame.draw.rect(surface, WHITE, button_rect, 2)
+            
+            replay_text = Fonts.medium.render("PLAY AGAIN", True, WHITE)
+            surface.blit(replay_text, (button_rect.centerx - replay_text.get_width() // 2,
+                                       button_rect.centery - replay_text.get_height() // 2))
+            
+            return button_rect
+        
+        return None
+    
+    async def submit_score(self):
+        """Submit score to leaderboard"""
+        try:
+            await save_score(self.player_name or "PLAYER", self.score, self.level)
+            self.leaderboard = await get_leaderboard(5)
+        except Exception as e:
+            print(f"Error saving score: {e}")
+            # Fallback to local leaderboard
+            entry = {"player_name": self.player_name or "PLAYER", 
+                     "score": self.score, "level": self.level}
+            self.leaderboard.append(entry)
+            self.leaderboard.sort(key=lambda x: x.get("score", 0), reverse=True)
+            self.leaderboard = self.leaderboard[:5]
+    
+    async def run(self):
+        running = True
+        
+        while running:
+            if is_web():
+                await asyncio.sleep(0)
+            
+            self.frame += 1
+            self.time_offset = time.time()
+            
+            # Event handling
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mouse_pos = pygame.mouse.get_pos()
+                    
+                    if self.state == "menu":
+                        button_rect = pygame.Rect(CFG.WIDTH // 2 - 100, CFG.HEIGHT - 120, 200, 50)
+                        if button_rect.collidepoint(mouse_pos):
+                            self.reset_game()
+                            self.state = "playing"
+                    
+                    elif self.state == "paused":
+                        button_rects = [
+                            pygame.Rect(CFG.WIDTH // 2 - 100, 280, 200, 50),
+                            pygame.Rect(CFG.WIDTH // 2 - 100, 350, 200, 50),
+                            pygame.Rect(CFG.WIDTH // 2 - 100, 420, 200, 50),
+                        ]
+                        for i, rect in enumerate(button_rects):
+                            if rect.collidepoint(mouse_pos):
+                                if i == 0:  # Resume
+                                    self.state = "playing"
+                                elif i == 1:  # Restart
+                                    self.reset_game()
+                                    self.state = "playing"
+                                elif i == 2:  # Quit
+                                    self.state = "menu"
+                    
+                    elif self.state == "game_over" and self.name_submitted:
+                        button_rect = pygame.Rect(CFG.WIDTH // 2 - 100, CFG.HEIGHT - 100, 200, 50)
+                        if button_rect.collidepoint(mouse_pos):
+                            self.state = "menu"
+                
+                elif event.type == pygame.KEYDOWN:
+                    if self.state == "playing":
+                        if event.key == pygame.K_SPACE or event.key == pygame.K_UP:
+                            self.shoot()
+                        elif event.key == pygame.K_ESCAPE:
+                            self.state = "paused"
+                            self.pause_selection = 0
+                    
+                    elif self.state == "paused":
+                        if event.key == pygame.K_ESCAPE:
+                            self.state = "playing"
+                        elif event.key == pygame.K_UP:
+                            self.pause_selection = (self.pause_selection - 1) % 3
+                        elif event.key == pygame.K_DOWN:
+                            self.pause_selection = (self.pause_selection + 1) % 3
+                        elif event.key == pygame.K_RETURN:
+                            if self.pause_selection == 0:  # Resume
+                                self.state = "playing"
+                            elif self.pause_selection == 1:  # Restart
+                                self.reset_game()
+                                self.state = "playing"
+                            elif self.pause_selection == 2:  # Quit
+                                self.state = "menu"
+                    
+                    elif self.state == "game_over" and self.entering_name:
+                        if event.key == pygame.K_RETURN and self.player_name:
+                            self.entering_name = False
+                            self.name_submitted = True
+                            await self.submit_score()
+                        elif event.key == pygame.K_BACKSPACE:
+                            self.player_name = self.player_name[:-1]
+                        elif len(self.player_name) < 10 and event.unicode.isalnum():
+                            self.player_name += event.unicode.upper()
+                    
+                    elif self.state == "menu":
+                        if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                            self.reset_game()
+                            self.state = "playing"
+            
+            # Update
+            self.star_field.update()
+            self.particles.update()
+            self.shake.update()
+            
+            if self.state == "playing":
+                self.update_playing()
+            
+            # Draw
+            screen.fill(BLACK)
+            
+            # Create shake surface
+            shake_surface = pygame.Surface((CFG.WIDTH, CFG.HEIGHT))
+            shake_surface.fill(BLACK)
+            
+            self.star_field.draw(shake_surface, self.time_offset)
+            
+            if self.state == "menu":
+                self.draw_menu(shake_surface)
+            elif self.state == "playing":
+                self.draw_playing(shake_surface)
+            elif self.state == "paused":
+                self.draw_playing(shake_surface)
+                self.draw_pause(shake_surface)
+            elif self.state == "game_over":
+                self.draw_playing(shake_surface)
+                self.draw_game_over(shake_surface)
+            
+            # Apply shake offset
+            screen.blit(shake_surface, (self.shake.offset_x, self.shake.offset_y))
+            
+            pygame.display.flip()
+            self.clock.tick(CFG.FPS)
+        
+        pygame.quit()
 
 
 async def main():
-    global screen, player_health, player_velocity, player_x, ammo, score, level, level_timer
-    global entering_name, name_submitted, player_name, knockback_timer, player_friction
-    global target_speed, target_spawn_rate, game_started
-
-    # Initialize game state
-    reset_game()
-    game_started = False  # Start with the mission brief
-    running = True
-    frames = 0
-    game_over = False
-    last_time = time.time()
-
-    while running:
-        if is_web():
-            await asyncio.sleep(0)
-
-        current_time = time.time()
-        dt = current_time - last_time
-        last_time = current_time
-
-        # Event handling
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mouse_pos = pygame.mouse.get_pos()
-                if not game_started:
-                    start_button = draw_start_screen()
-                    if start_button.collidepoint(mouse_pos):
-                        game_started = True
-                elif game_over and name_submitted:
-                    if replay_rect.collidepoint(event.pos):
-                        reset_game()
-                        game_started = False  # Go back to mission brief
-                        game_over = False
-            elif event.type == pygame.KEYDOWN:
-                if game_over and entering_name:
-                    if event.key == pygame.K_RETURN and player_name:
-                        entering_name = False
-                        name_submitted = True
-                        await save_score(player_name, score, level)
-                    elif event.key == pygame.K_BACKSPACE:
-                        player_name = player_name[:-1]
-                    elif len(player_name) < MAX_NAME_LENGTH and event.unicode.isalnum():
-                        player_name += event.unicode.upper()
-                elif event.key == pygame.K_SPACE and game_started and not game_over:
-                    shoot(player_x, player_y)
-
-        # Clear screen and draw stars
-        screen.fill(BLACK)
-        draw_stars()
-
-        # Handle game states
-        if not game_started:
-            draw_start_screen()
-        elif game_over:
-            if not entering_name and not name_submitted:
-                entering_name = True
-                player_name = ""
-
-            game_over_text = font.render("GAME OVER!", True, RED)
-            final_score_text = font.render(f"Final Score: {score}", True, WHITE)
-            level_reached_text = font.render(f"Level Reached: {level}", True, WHITE)
-
-            screen.blit(game_over_text, (WIDTH // 2 - 100, HEIGHT // 3 - 50))
-            screen.blit(final_score_text, (WIDTH // 2 - 100, HEIGHT // 3))
-            screen.blit(level_reached_text, (WIDTH // 2 - 100, HEIGHT // 3 + 50))
-
-            if entering_name:
-                draw_name_input(screen, player_name)
-            elif name_submitted:
-                leaderboard_title = font.render("HIGH SCORES", True, YELLOW)
-                screen.blit(leaderboard_title, (WIDTH // 2 - 100, HEIGHT // 2 - 40))
-
-                leaderboard = await get_leaderboard(MAX_LEADERBOARD_ENTRIES)
-                for i, entry in enumerate(leaderboard):
-                    score_text = font.render(
-                        f"{i+1}. {entry['player_name']}: {entry['score']} (Level {entry['level']})",
-                        True,
-                        WHITE,
-                    )
-                    screen.blit(score_text, (WIDTH // 2 - 150, HEIGHT // 2 + i * 30))
-
-                # Draw replay button
-                replay_rect = draw_button(
-                    "PLAY AGAIN",
-                    WIDTH // 2 - BUTTON_WIDTH // 2,
-                    HEIGHT - 100,
-                    pygame.mouse.get_pos(),
-                )
-        else:
-            # Game logic
-            if player_health <= 0:
-                game_over = True
-                continue  # Skip to next frame if game is over
-
-            if current_time - level_timer >= level_duration:
-                level += 1
-                level_timer = current_time
-                target_speed = 3 * (speed_increase ** (level - 1))
-                target_spawn_rate = max(10, 60 - (level * 5))
-
-            # Update player movement
-            if knockback_timer > 0:
-                knockback_timer -= 1
-                # Keep applying knockback velocity while timer is active
-                player_x += player_velocity
-                player_x = max(0, min(player_x, WIDTH - player_width))
-            else:
-                # Normal movement
-                keys = pygame.key.get_pressed()
-                if keys[pygame.K_LEFT]:
-                    player_velocity -= player_acceleration
-                if keys[pygame.K_RIGHT]:
-                    player_velocity += player_acceleration
-
-            # Apply physics
-            player_velocity *= player_friction
-            player_velocity = max(
-                min(player_velocity, player_max_speed), -player_max_speed
-            )
-            player_x += player_velocity
-            player_x = max(0, min(player_x, WIDTH - player_width))
-
-            # Spawn objects
-            frames += 1
-            if frames % target_spawn_rate == 0:
-                spawn_target()
-            if frames % 300 == 0:
-                spawn_care_package()
-            if frames % 240 == 0:
-                spawn_health_pack()
-
-            # Update and draw game objects
-            update_game_objects()
-            draw_game_objects()
-            draw_hud(current_time)
-
-        pygame.display.flip()
-        clock.tick(60)
-
-    pygame.quit()
+    game = Game()
+    await game.run()
 
 
-def update_game_objects():
-    global player_health, score, game_over
-
-    # Update bullets
-    for bullet in bullets[:]:
-        bullet["y"] -= 7
-        if bullet["y"] < 0:
-            bullets.remove(bullet)
-
-    # Update targets
-    for target in targets[:]:
-        target["y"] += target_speed
-        target["rotation"] = (target["rotation"] + target["spin"]) % 360
-        if target["y"] > HEIGHT:
-            targets.remove(target)
-
-    # Update care packages
-    for package in care_packages[:]:
-        package["y"] += 2
-        if package["y"] > HEIGHT:
-            care_packages.remove(package)
-
-    # Update health packs
-    for pack in health_packs[:]:
-        pack["y"] += 2.5
-        if pack["y"] > HEIGHT:
-            health_packs.remove(pack)
-
-    # Collision detection
-    check_collisions()
-
-    # Check for game over
-    if player_health <= 0:
-        game_over = True
-
-
-def draw_game_objects():
-    # Draw player
-    draw_player(player_x, player_y)
-
-    # Draw bullets
-    for bullet in bullets:
-        pygame.draw.circle(
-            screen, WHITE, (int(bullet["x"]), int(bullet["y"])), BULLET_RADIUS
-        )
-
-    # Draw targets
-    for target in targets:
-        draw_asteroid(
-            screen,
-            int(target["x"]),
-            int(target["y"]),
-            TARGET_RADIUS,
-            target["rotation"],
-        )
-
-    # Draw care packages
-    for package in care_packages:
-        draw_crate(screen, package["x"], package["y"])
-
-    # Draw health packs
-    for pack in health_packs:
-        draw_heart(screen, pack["x"], pack["y"])
-
-    # Draw explosions
-    for explosion in explosions[:]:
-        radius = (explosion["size"] * explosion["frame"]) // 20
-        alpha = 255 * (1 - explosion["frame"] / 20)
-        explosion_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-        pygame.draw.circle(
-            explosion_surface, (*YELLOW, alpha), (radius, radius), radius
-        )
-        screen.blit(
-            explosion_surface, (explosion["x"] - radius, explosion["y"] - radius)
-        )
-        explosion["frame"] += 1
-        if explosion["frame"] >= 20:
-            explosions.remove(explosion)
-
-    # Draw floating texts
-    for text in floating_texts[:]:
-        text_surface = font.render(text["text"], True, text["color"])
-        text_rect = text_surface.get_rect(
-            center=(text["x"], text["y"] - text["frame"] * FLOAT_SPEED)
-        )
-        screen.blit(text_surface, text_rect)
-        text["frame"] += 1
-        if text["frame"] >= FLOAT_DURATION:
-            floating_texts.remove(text)
-
-
-def draw_hud(current_time):
-    # Draw HUD elements
-    score_text = font.render(f"Score: {score}", True, WHITE)
-    health_text = font.render(f"Health: {player_health}", True, WHITE)
-    ammo_text = font.render(f"Ammo: {ammo}", True, WHITE)
-    level_text = font.render(f"Level: {level}", True, WHITE)
-    time_left = level_duration - (current_time - level_timer)
-    timer_text = font.render(f"Next Level: {int(time_left)}s", True, WHITE)
-
-    # Left-aligned HUD elements
-    screen.blit(score_text, (10, 10))  # Moved back to original position
-    screen.blit(health_text, (10, 50))
-    screen.blit(ammo_text, (10, 90))
-
-    # Right-aligned HUD elements
-    level_x = WIDTH - level_text.get_width() - 10
-    timer_x = WIDTH - timer_text.get_width() - 10
-    screen.blit(level_text, (level_x, 10))
-    screen.blit(timer_text, (timer_x, 50))
-
-
-def check_collisions():
-    global player_health, ammo, score, game_over, player_velocity, knockback_timer
-
-    player_center_x = player_x + player_width // 2
-    player_center_y = player_y + player_height // 2
-
-    # Bullet collisions with targets, ammo crates, and health packs
-    for bullet in bullets[:]:
-        # Check bullet collision with targets
-        for target in targets[:]:
-            distance = math.sqrt(
-                (bullet["x"] - target["x"]) ** 2 + (bullet["y"] - target["y"]) ** 2
-            )
-            if distance < TARGET_RADIUS + BULLET_RADIUS:
-                if bullet in bullets:
-                    bullets.remove(bullet)
-                if target in targets:
-                    targets.remove(target)
-                    create_explosion(target["x"], target["y"])
-                    score += 10
-                    break
-
-        # Check bullet collision with care packages
-        for package in care_packages[:]:
-            if (
-                abs(bullet["x"] - package["x"]) < CARE_PACKAGE_SIZE // 2
-                and abs(bullet["y"] - package["y"]) < CARE_PACKAGE_SIZE // 2
-            ):
-                if bullet in bullets:
-                    bullets.remove(bullet)
-                if package in care_packages:
-                    care_packages.remove(package)
-                    create_explosion(package["x"], package["y"])
-                    ammo += 5
-                    create_floating_text("+5", package["x"], package["y"], GREEN)
-                    break
-
-        # Check bullet collision with health packs
-        for pack in health_packs[:]:
-            if (
-                abs(bullet["x"] - pack["x"]) < HEALTH_PACK_SIZE * 2
-                and abs(bullet["y"] - pack["y"]) < HEALTH_PACK_SIZE * 2
-            ):
-                if bullet in bullets:
-                    bullets.remove(bullet)
-                if pack in health_packs:
-                    health_packs.remove(pack)
-                    create_explosion(pack["x"], pack["y"])
-                    player_health = min(100, player_health + HEALTH_BONUS)
-                    create_floating_text("+10", pack["x"], pack["y"], BLUE)
-                    break
-
-    # Player collisions with targets
-    for target in targets[:]:
-        distance = math.sqrt(
-            (player_center_x - target["x"]) ** 2 + (player_center_y - target["y"]) ** 2
-        )
-        if distance < 45:
-            # Apply damage and check for game over
-            player_health = max(0, player_health - 10)  # Prevent negative health
-            if player_health <= 0:
-                game_over = True
-                return  # Exit immediately if game is over
-
-            # Calculate knockback direction and apply force
-            impact_direction = -1 if target["x"] > player_center_x else 1
-            player_velocity = PLAYER_KNOCKBACK_FORCE * impact_direction
-            knockback_timer = KNOCKBACK_DURATION
-            targets.remove(target)
-            create_explosion(target["x"], target["y"], PLAYER_HIT_EXPLOSION_SIZE)
-
-    # Collision with care packages (only if not shot)
-    for package in care_packages[:]:
-        if (
-            player_x < package["x"] + 30
-            and player_x + player_width > package["x"] - 30
-            and player_y < package["y"] + 30
-            and player_y + player_height > package["y"] - 30
-        ):
-            ammo += 5
-            create_floating_text("+5", package["x"], package["y"], GREEN)
-            care_packages.remove(package)
-            # if powerup_sound:
-            #   powerup_sound.play()
-
-    # Collision with health packs (only if not shot)
-    for pack in health_packs[:]:
-        if (
-            player_x < pack["x"] + HEALTH_PACK_SIZE
-            and player_x + player_width > pack["x"] - HEALTH_PACK_SIZE
-            and player_y < pack["y"] + HEALTH_PACK_SIZE
-            and player_y + player_height > pack["y"] - HEALTH_PACK_SIZE
-        ):
-            player_health = min(100, player_health + HEALTH_BONUS)
-            create_floating_text("+10", pack["x"], pack["y"], BLUE)
-            health_packs.remove(pack)
-            # if powerup_sound:
-            #    powerup_sound.play()
-
-
-# Entry point
 if __name__ == "__main__":
     asyncio.run(main())
 else:

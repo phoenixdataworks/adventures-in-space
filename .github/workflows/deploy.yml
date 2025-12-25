@@ -1,0 +1,138 @@
+# GitHub Actions workflow for building and deploying to GitHub Pages
+# Builds Pygame games with Pygbag and the Next.js homepage
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # Python / Pygame Games Build
+      # ==========================================
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pygame pygbag
+
+      - name: Build Adventures in Space
+        run: |
+          cd adventures-in-space
+          python -m pygbag --build main.py
+        continue-on-error: true
+
+      - name: Build Santa vs Grunch
+        run: |
+          cd santa-vs-grunch
+          python -m pygbag --build main.py
+        continue-on-error: true
+
+      - name: Build Snake Jump
+        run: |
+          cd snake-jump
+          python -m pygbag --build snake-jump.py
+        continue-on-error: true
+
+      - name: Build Bible Stories
+        run: |
+          cd bible_stories
+          python -m pygbag --build main.py
+        continue-on-error: true
+
+      - name: Build Joseph Mary Run
+        run: |
+          cd joseph_mary_run
+          python -m pygbag --build main.py
+        continue-on-error: true
+
+      # ==========================================
+      # Node.js / Next.js Build
+      # ==========================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-app/package-lock.json
+
+      - name: Install Node dependencies
+        working-directory: web-app
+        run: npm ci || npm install
+
+      - name: Copy games to public folder
+        run: |
+          mkdir -p web-app/public/games
+          
+          # Copy each game's build output if it exists
+          [ -d "adventures-in-space/build/web" ] && cp -r adventures-in-space/build/web web-app/public/games/adventures-in-space || echo "adventures-in-space not built"
+          [ -d "santa-vs-grunch/build/web" ] && cp -r santa-vs-grunch/build/web web-app/public/games/santa-vs-grunch || echo "santa-vs-grunch not built"
+          [ -d "snake-jump/build/web" ] && cp -r snake-jump/build/web web-app/public/games/snake-jump || echo "snake-jump not built"
+          [ -d "bible_stories/build/web" ] && cp -r bible_stories/build/web web-app/public/games/bible_stories || echo "bible_stories not built"
+          [ -d "joseph_mary_run/build/web" ] && cp -r joseph_mary_run/build/web web-app/public/games/joseph_mary_run || echo "joseph_mary_run not built"
+          
+          echo "Games copied:"
+          ls -la web-app/public/games/
+
+      - name: Build Next.js
+        working-directory: web-app
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Add .nojekyll file
+        run: touch web-app/out/.nojekyll
+
+      - name: List output
+        run: |
+          echo "=== Build Output ==="
+          ls -la web-app/out/
+          echo ""
+          echo "=== Games ==="
+          ls -la web-app/out/games/ || echo "No games folder"
+
+      # ==========================================
+      # Deploy to GitHub Pages
+      # ==========================================
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-app/out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
