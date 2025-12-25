@@ -476,6 +476,14 @@ class Game:
         self.reset_game()
     
     def reset_game(self):
+        # Score and stats (initialize first, needed by spawn_ai_snakes)
+        self.score = 0
+        self.jumps_used = 0
+        self.kills = 0
+        self.combo = 0
+        self.combo_timer = 0
+        self.difficulty = 1.0
+        
         # Create player at center of world
         self.player = Snake(WORLD_WIDTH // 2, WORLD_HEIGHT // 2, (0, 255, 128), is_player=True)
         
@@ -493,14 +501,6 @@ class Game:
         # Effects
         self.particles = []
         self.floating_texts = []
-        
-        # Score and stats
-        self.score = 0
-        self.jumps_used = 0
-        self.kills = 0
-        self.combo = 0
-        self.combo_timer = 0
-        self.difficulty = 1.0
     
     def spawn_ai_snakes(self, count):
         for _ in range(count):
