@@ -72,37 +72,49 @@ Navigate through Bethlehem, find keys, avoid guards, and use tools to escape thr
 git clone https://github.com/bobbylansing/adventures-in-space.git
 cd adventures-in-space
 
+# Install Python dependencies
+pip install -r requirements.txt
+
 # Build all games and the web app
 ./build.sh
 
-# Or manually:
-
-# 1. Install Python dependencies
-pip install pygame pygbag
-
-# 2. Build games with Pygbag
-cd adventures-in-space && python -m pygbag --build main.py && cd ..
-cd santa-vs-grunch && python -m pygbag --build main.py && cd ..
-cd snake-jump && python -m pygbag --build snake-jump.py && cd ..
-cd bible_stories && python -m pygbag --build main.py && cd ..
-cd joseph_mary_run && python -m pygbag --build main.py && cd ..
-
-# 3. Setup Next.js
+# Or run the Next.js dev server:
 cd web-app
 npm install
-
-# 4. Copy games to public folder
-mkdir -p public/games
-cp -r ../adventures-in-space/build/web public/games/adventures-in-space
-cp -r ../santa-vs-grunch/build/web public/games/santa-vs-grunch
-cp -r ../snake-jump/build/web public/games/snake-jump
-cp -r ../bible_stories/build/web public/games/bible_stories
-cp -r ../joseph_mary_run/build/web public/games/joseph_mary_run
-
-# 5. Run dev server
 npm run dev
 # Opens at http://localhost:3000
 ```
+
+---
+
+## 🏆 Leaderboard System
+
+The games use a simple localStorage-based leaderboard that works offline and persists per-device.
+
+### Usage in Games
+
+```python
+from engine.leaderboard import Leaderboard, add_score, get_top_scores, is_high_score
+
+# Simple API
+if is_high_score("my-game", player_score):
+    rank = add_score("my-game", player_name, player_score, level=current_level)
+    print(f"New high score! Rank: {rank}")
+
+# Get top 5 scores
+for entry in get_top_scores("my-game", 5):
+    print(f"{entry['name']}: {entry['score']}")
+
+# Or use the class directly
+leaderboard = Leaderboard("my-game", max_entries=10)
+leaderboard.add_score("PLAYER", 1000)
+```
+
+**Features:**
+- Works in browser (Pygbag/localStorage) and desktop (JSON file)
+- Persistent across sessions
+- Automatic sorting and ranking
+- No external dependencies or API keys
 
 ---
 
@@ -136,12 +148,13 @@ adventures-in-space/
 │   │   ├── GameCard.tsx        # Animated game cards
 │   │   ├── Header.tsx          # Neon header
 │   │   └── StarField.tsx       # Animated stars
-│   └── public/games/           # Built Pygbag games (gitignored)
+│   └── public/games/           # Built Pygbag games
 ├── engine/                      # Shared Python game engine
 │   ├── camera.py               # Camera with shake, zoom
 │   ├── collision.py            # Spatial partitioning
 │   ├── particles.py            # Particle effects
 │   ├── object_pool.py          # Memory-efficient pooling
+│   ├── leaderboard.py          # localStorage leaderboards
 │   └── ...
 ├── adventures-in-space/         # Space shooter
 ├── santa-vs-grunch/             # Christmas platformer
@@ -158,11 +171,12 @@ adventures-in-space/
 
 | Layer | Technology |
 |-------|------------|
-| Games | Python, Pygame |
-| Web Export | Pygbag (WebAssembly) |
-| Homepage | Next.js 14, React, Tailwind CSS |
-| Animations | Framer Motion |
+| Games | Python 3.12, Pygame 2.6 |
+| Web Export | Pygbag 0.9 (WebAssembly) |
+| Homepage | Next.js 15, React 19, Tailwind CSS |
+| Animations | Motion (framer-motion) |
 | Deployment | GitHub Pages + Actions |
+| Leaderboards | Browser localStorage |
 
 ---
 
