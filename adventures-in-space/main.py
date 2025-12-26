@@ -28,23 +28,124 @@ import os
 import sys
 import platform
 
-# Add parent directory to path for engine imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Try to import shared engine modules, provide fallbacks for web builds
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from engine import (
+        ScreenShake,
+        SpatialGrid,
+        check_circle_collision,
+        check_circle_rect_collision,
+        ObjectPool,
+        clamp,
+        lerp,
+        distance,
+    )
+except ImportError:
+    # Fallback implementations for web builds
+    class ScreenShake:
+        def __init__(self):
+            self.offset_x = 0
+            self.offset_y = 0
+            self.intensity = 0
+            self.duration = 0
+        
+        def trigger(self, intensity=10, duration=10):
+            self.intensity = intensity
+            self.duration = duration
+        
+        def update(self):
+            if self.duration > 0:
+                self.offset_x = random.uniform(-self.intensity, self.intensity)
+                self.offset_y = random.uniform(-self.intensity, self.intensity)
+                self.intensity *= 0.9
+                self.duration -= 1
+            else:
+                self.offset_x = 0
+                self.offset_y = 0
+    
+    class SpatialGrid:
+        def __init__(self, cell_size=64):
+            self.cell_size = cell_size
+            self.cells = {}
+        
+        def clear(self):
+            self.cells.clear()
+        
+        def insert(self, obj):
+            cx = int(obj.x // self.cell_size)
+            cy = int(obj.y // self.cell_size)
+            key = (cx, cy)
+            if key not in self.cells:
+                self.cells[key] = []
+            self.cells[key].append(obj)
+        
+        def get_nearby(self, x, y, radius=1):
+            cx = int(x // self.cell_size)
+            cy = int(y // self.cell_size)
+            nearby = []
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    key = (cx + dx, cy + dy)
+                    if key in self.cells:
+                        nearby.extend(self.cells[key])
+            return nearby
+    
+    class ObjectPool:
+        def __init__(self, cls, size):
+            self.cls = cls
+            self.pool = [cls() for _ in range(size)]
+            self.active = []
+        
+        def acquire(self):
+            if self.pool:
+                obj = self.pool.pop()
+                self.active.append(obj)
+                return obj
+            return None
+        
+        def release(self, obj):
+            if obj in self.active:
+                self.active.remove(obj)
+                self.pool.append(obj)
+        
+        def release_all(self):
+            self.pool.extend(self.active)
+            self.active.clear()
+    
+    def check_circle_collision(x1, y1, r1, x2, y2, r2):
+        dx = x1 - x2
+        dy = y1 - y2
+        dist = math.sqrt(dx * dx + dy * dy)
+        return dist < r1 + r2
+    
+    def check_circle_rect_collision(cx, cy, cr, rx, ry, rw, rh):
+        closest_x = max(rx, min(cx, rx + rw))
+        closest_y = max(ry, min(cy, ry + rh))
+        dx = cx - closest_x
+        dy = cy - closest_y
+        return (dx * dx + dy * dy) < (cr * cr)
+    
+    def clamp(value, min_val, max_val):
+        return max(min_val, min(max_val, value))
+    
+    def lerp(a, b, t):
+        return a + (b - a) * t
+    
+    def distance(x1, y1, x2, y2):
+        return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-# Import shared engine modules
-from engine import (
-    ScreenShake,
-    SpatialGrid,
-    check_circle_collision,
-    check_circle_rect_collision,
-    ObjectPool,
-    clamp,
-    lerp,
-    distance,
-)
-
-# Import Supabase configuration
-from supabase_config import save_score, get_leaderboard
+# Try to import Supabase configuration, provide fallbacks for web builds
+try:
+    from supabase_config import save_score, get_leaderboard
+except ImportError:
+    # Fallback for web builds - no leaderboard functionality
+    async def save_score(name, score, level):
+        print(f"Score saved locally: {name} - {score} (Level {level})")
+        return True
+    
+    async def get_leaderboard(limit=10):
+        return []
 
 # Initialize Pygame
 pygame.init()

@@ -54,7 +54,7 @@ jobs:
       - name: Build Snake Jump
         run: |
           cd snake-jump
-          python -m pygbag --build snake-jump.py
+          python -m pygbag --build main.py
         continue-on-error: true
 
       - name: Build Bible Stories
