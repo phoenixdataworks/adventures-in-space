@@ -1207,18 +1207,18 @@ class Game:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 if self.state == MENU:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.current_level = 1
                         self.state = PLAYING
                         self.reset_game()
                 elif self.state == GAME_OVER:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.state = MENU
                 elif self.state == VICTORY:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.state = MENU
                 elif self.state == LEVEL_COMPLETE:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.current_level += 1
                         self.state = PLAYING
                         self.reset_game()
@@ -1345,7 +1345,7 @@ class Game:
         self.screen.blit(donkey, (SCREEN_WIDTH // 2 - 40, 340))
 
         # Instructions
-        prompt = font_small.render("Press ENTER to Start", True, WHITE)
+        prompt = font_small.render("Press SPACE to Start", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 450))
 
         controls = pygame.font.Font(None, 24)
@@ -1395,7 +1395,7 @@ class Game:
         score_text = font_small.render(f"Final Score: {self.player.score}", True, GOLD)
         self.screen.blit(score_text, (SCREEN_WIDTH // 2 - score_text.get_width() // 2, 320))
 
-        prompt = font_small.render("Press ENTER to Continue", True, WHITE)
+        prompt = font_small.render("Press SPACE to Continue", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 400))
 
     def draw_level_complete(self):
@@ -1418,7 +1418,7 @@ class Game:
         next_text = font_small.render(f"Next: {next_level}", True, WHITE)
         self.screen.blit(next_text, (SCREEN_WIDTH // 2 - next_text.get_width() // 2, 330))
 
-        prompt = font_small.render("Press ENTER to Continue", True, WHITE)
+        prompt = font_small.render("Press SPACE to Continue", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 400))
 
     def draw_victory(self):
@@ -1445,7 +1445,7 @@ class Game:
         score_text = font_small.render(f"Final Score: {self.player.score}", True, GOLD)
         self.screen.blit(score_text, (SCREEN_WIDTH // 2 - score_text.get_width() // 2, 420))
 
-        prompt = font_small.render("Press ENTER to Play Again", True, WHITE)
+        prompt = font_small.render("Press SPACE to Play Again", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 470))
 
     def draw(self):

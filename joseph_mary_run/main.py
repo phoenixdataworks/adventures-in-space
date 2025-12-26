@@ -35,7 +35,7 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN:
+                if event.key == pygame.K_SPACE:
                     if self.state == MENU:
                         self.state = PLAYING
                         self.reset_game()
@@ -140,7 +140,7 @@ class Game:
         self.screen.blit(title, (SCREEN_WIDTH / 2 - title.get_width() / 2, 200))
 
         font = pygame.font.Font(None, 36)
-        prompt = font.render("Press ENTER to Start", True, WHITE)
+        prompt = font.render("Press SPACE to Start", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH / 2 - prompt.get_width() / 2, 400))
 
         font = pygame.font.Font(None, 24)
@@ -195,7 +195,7 @@ class Game:
         self.screen.blit(title, (SCREEN_WIDTH / 2 - title.get_width() / 2, 200))
 
         font = pygame.font.Font(None, 36)
-        prompt = font.render("Press ENTER to Try Again", True, WHITE)
+        prompt = font.render("Press SPACE to Try Again", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH / 2 - prompt.get_width() / 2, 400))
 
     def draw_level_complete(self):
@@ -206,7 +206,7 @@ class Game:
 
         if self.current_level < len(LEVELS):
             font = pygame.font.Font(None, 36)
-            prompt = font.render("Press ENTER for Next Level", True, WHITE)
+            prompt = font.render("Press SPACE for Next Level", True, WHITE)
             self.screen.blit(prompt, (SCREEN_WIDTH / 2 - prompt.get_width() / 2, 400))
         else:
             font = pygame.font.Font(None, 36)

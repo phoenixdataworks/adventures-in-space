@@ -533,7 +533,7 @@ class Game:
             
             if event.type == pygame.KEYDOWN:
                 if self.state == MENU:
-                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                    if event.key == pygame.K_SPACE:
                         self.state = PLAYING
                         self.reset_game()
                 
@@ -543,7 +543,7 @@ class Game:
                         self.jumps_used += 1
                 
                 elif self.state == GAME_OVER:
-                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                    if event.key == pygame.K_SPACE:
                         self.state = MENU
         
         return True
@@ -709,7 +709,7 @@ class Game:
             "Let enemies hit YOUR tail to kill them!",
             "Build combos for bonus points!",
             "",
-            "Press SPACE to start!"
+            "Press SPACE to Start"
         ]
         for i, text in enumerate(instructions):
             inst = self.font_small.render(text, True, (150, 150, 150))
@@ -848,7 +848,7 @@ class Game:
             hs_rect = hs_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100))
             screen.blit(hs_text, hs_rect)
         
-        restart = self.font_small.render("Press SPACE to continue", True, WHITE)
+        restart = self.font_small.render("Press SPACE to Continue", True, WHITE)
         restart_rect = restart.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 80))
         screen.blit(restart, restart_rect)
     
@@ -873,3 +873,4 @@ if __name__ == "__main__":
     asyncio.run(main())
 else:
     asyncio.create_task(main())
+

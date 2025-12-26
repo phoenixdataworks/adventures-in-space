@@ -250,3 +250,4 @@ class TransitionState(GameState):
             width = int(screen.get_width() * progress)
             pygame.draw.rect(screen, (0, 0, 0), (0, 0, width, screen.get_height()))
 
+

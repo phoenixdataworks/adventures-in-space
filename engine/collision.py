@@ -241,3 +241,4 @@ class CollisionResolver:
                     if collision:
                         rule['callback'](e1, e2)
 
+

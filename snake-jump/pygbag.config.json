@@ -1,0 +1,30 @@
+{
+    "app": "main.py",
+    "title": "Snake Jump",
+    "width": 800,
+    "height": 600,
+    "cache": false,
+    "python_version": "3.11",
+    "renderer": "software",
+    "archive": [
+        "main.py",
+        "assets/**/*"
+    ],
+    "include": [
+        "pygame",
+        "asyncio",
+        "platform",
+        "json",
+        "math",
+        "random",
+        "time",
+        "os"
+    ],
+    "standalone": true,
+    "serve": {
+        "app_path": ".",
+        "host": "localhost",
+        "port": 8000
+    }
+}
+

@@ -157,3 +157,4 @@ class Fonts:
         cls.huge = None
         cls.title = None
 
+

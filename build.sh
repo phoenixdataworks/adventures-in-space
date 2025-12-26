@@ -47,7 +47,7 @@ echo "----------------------------------------"
 declare -a games=(
     "adventures-in-space:main.py"
     "santa-vs-grunch:main.py"
-    "snake-jump:snake-jump.py"
+    "snake-jump:main.py"
     "bible_stories:main.py"
     "joseph_mary_run:main.py"
 )
@@ -118,4 +118,5 @@ echo "   cd web-app && npx serve out"
 echo ""
 echo "📤 To deploy to GitHub Pages:"
 echo "   Push to main branch - GitHub Actions will handle the rest!"
+
 

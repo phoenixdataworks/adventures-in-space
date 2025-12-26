@@ -309,3 +309,4 @@ class ParticleSystem:
     def total_particles(self):
         return sum(e.particle_count for e in self.emitters)
 
+

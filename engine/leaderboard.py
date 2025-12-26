@@ -166,3 +166,4 @@ def is_high_score(game_id: str, score: int) -> bool:
     """Check if a score would make the leaderboard."""
     return get_leaderboard(game_id).is_high_score(score)
 
+

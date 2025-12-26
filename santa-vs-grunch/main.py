@@ -818,7 +818,7 @@ class Game:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 if self.state == MENU:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.state = MODE_SELECT
                 elif self.state == MODE_SELECT:
                     if event.key == pygame.K_1:
@@ -833,7 +833,7 @@ class Game:
                     if event.key == pygame.K_SPACE:
                         self.santa.jump(self.sound_manager)
                 elif self.state == GAME_OVER:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_SPACE:
                         self.state = MODE_SELECT
 
         # Handle movement in playing state
@@ -989,7 +989,7 @@ class Game:
         self.screen.blit(title, (SCREEN_WIDTH / 2 - title.get_width() / 2, 200))
 
         font = pygame.font.Font(None, 36)
-        prompt = font.render("Press ENTER to Start", True, WHITE)
+        prompt = font.render("Press SPACE to Start", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH / 2 - prompt.get_width() / 2, 400))
 
     def draw_game_over(self):
@@ -1009,7 +1009,7 @@ class Game:
             high_score_text, (SCREEN_WIDTH / 2 - high_score_text.get_width() / 2, 350)
         )
 
-        prompt = font.render("Press ENTER to Play Again", True, WHITE)
+        prompt = font.render("Press SPACE to Play Again", True, WHITE)
         self.screen.blit(prompt, (SCREEN_WIDTH / 2 - prompt.get_width() / 2, 450))
 
     def draw_mode_select(self):

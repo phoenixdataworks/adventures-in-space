@@ -1647,7 +1647,7 @@ class Game:
                             self.player_name += event.unicode.upper()
                     
                     elif self.state == "menu":
-                        if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        if event.key == pygame.K_SPACE:
                             self.reset_game()
                             self.state = "playing"
             

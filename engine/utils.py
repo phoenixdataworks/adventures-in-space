@@ -304,3 +304,4 @@ class Cooldown:
         """Reset cooldown to ready state"""
         self.current = 0
 
+
